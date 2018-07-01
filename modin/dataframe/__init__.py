@@ -46,6 +46,8 @@ __all__ = [
 try:
     if threading.current_thread().name == "MainThread":
         import ray
-        ray.init()
+        import psutil
+        mem = psutil.virtual_memory().total
+        ray.init(object_store_memory=mem, use_raylet=True)
 except AssertionError:
     pass

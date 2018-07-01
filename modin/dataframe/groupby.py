@@ -23,6 +23,14 @@ class DataFrameGroupBy(object):
     def __init__(self, df, by, axis, level, as_index, sort, group_keys,
                  squeeze, **kwargs):
 
+        self._df = df
+        self._by = ray.put(by)
+        self._level = level
+        self._sort = sort
+        self._as_index = as_index
+        self._group_keys = group_keys
+        self._squeeze = squeeze
+
         self._columns = df.columns
         self._index = df.index
         self._axis = axis
@@ -31,36 +39,35 @@ class DataFrameGroupBy(object):
         self._col_metadata = df._col_metadata
 
         if axis == 0:
-            partitions = [column for column in df._block_partitions.T]
-            self._index_grouped = \
-                pandas.Series(self._index, index=self._index) \
-                .groupby(by=by, sort=sort)
+            self._partitions = df._col_partitions #[column for column in df._block_partitions.T]
+        #     self._index_grouped = \
+        #         pandas.Series(self._index, index=self._index) \
+        #         .groupby(by=by, sort=sort)
         else:
-            partitions = [row for row in df._block_partitions]
-            self._index_grouped = \
-                pandas.Series(self._columns, index=self._columns) \
-                .groupby(by=by, sort=sort)
+            self._partitions = [row for row in df._block_partitions]
+        #     self._index_grouped = \
+        #         pandas.Series(self._columns, index=self._columns) \
+        #         .groupby(by=by, sort=sort)
 
-        self._keys_and_values = [(k, v)
-                                 for k, v in self._index_grouped]
+        # self._keys_and_values = [(k, v) for k, v in self._index_grouped]
 
-        if len(self) > 1:
-            self._grouped_partitions = \
-                list(zip(*(groupby._submit(args=(by,
-                                                 axis,
-                                                 level,
-                                                 as_index,
-                                                 sort,
-                                                 group_keys,
-                                                 squeeze)
-                                           + tuple(part.tolist()),
-                                           num_return_vals=len(self))
-                           for part in partitions)))
-        else:
-            if axis == 0:
-                self._grouped_partitions = [df._col_partitions]
-            else:
-                self._grouped_partitions = [df._row_partitions]
+        # if len(self) > 1:
+        #     self._grouped_partitions = \
+        #         list(zip(*(groupby._submit(args=(by,
+        #                                          axis,
+        #                                          level,
+        #                                          as_index,
+        #                                          sort,
+        #                                          group_keys,
+        #                                          squeeze)
+        #                                    + tuple(part.tolist()),
+        #                                    num_return_vals=len(self))
+        #                    for part in partitions)))
+        # else:
+        #     if axis == 0:
+        #         self._grouped_partitions = [df._col_partitions]
+        #     else:
+        #         self._grouped_partitions = [df._row_partitions]
 
     def __getattr__(self, key):
         """Afer regular attribute access, looks up the name in the columns
@@ -370,8 +377,17 @@ class DataFrameGroupBy(object):
         return self._apply_agg_function(lambda df: df.size)
 
     def sum(self, **kwargs):
-        return self._apply_agg_function(lambda df:
-                                        df.sum(axis=self._axis, **kwargs))
+        x = [groupby_agg.remote(self._by, self._axis, self._level,
+                                self._as_index, self._sort, self._group_keys,
+                                self._squeeze,
+                                pandas.core.groupby.DataFrameGroupBy.sum,
+                                *part)
+             for part in self._df._block_partitions.T]
+
+        from .dataframe import DataFrame
+        return DataFrame(col_partitions=x, columns=self._columns, index=np.array(range(100)))
+        # return self._apply_agg_function(lambda df:
+        #                                 df.sum(axis=self._axis, **kwargs))
 
     def __unicode__(self):
         raise NotImplementedError(
@@ -452,8 +468,17 @@ class DataFrameGroupBy(object):
                                                             **kwargs))
 
     def count(self, **kwargs):
-        return self._apply_agg_function(lambda df: df.count(self._axis,
-                                                            **kwargs))
+        x = [groupby_agg.remote(self._by, self._axis, self._level,
+                                self._as_index, self._sort, self._group_keys,
+                                self._squeeze,
+                                pandas.core.groupby.DataFrameGroupBy.count,
+                                part)
+             for part in self._partitions]
+
+        from .dataframe import DataFrame
+        return DataFrame(col_partitions=x, columns=self._columns, index=ray.get(_get_index.remote(x[0])))
+        # return self._apply_agg_function(lambda df: df.count(self._axis,
+                                                            # **kwargs))
 
     def pipe(self, func, *args, **kwargs):
         return com._pipe(self, func, *args, **kwargs)
@@ -579,3 +604,21 @@ def groupby(by, axis, level, as_index, sort, group_keys, squeeze, *df):
                                      sort=sort,
                                      group_keys=group_keys,
                                      squeeze=squeeze)]
+
+@ray.remote
+def groupby_agg(by, axis, level, as_index, sort, group_keys, squeeze, agg_func, *df):
+
+    df = pandas.concat(df, axis=axis)
+
+    return agg_func(df.groupby(by=by,
+                               axis=axis,
+                               level=level,
+                               as_index=as_index,
+                               sort=sort,
+                               group_keys=group_keys,
+                               squeeze=squeeze))
+
+
+@ray.remote
+def _get_index(df):
+    return df.index

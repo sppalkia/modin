@@ -666,7 +666,7 @@ class DataFrame(object):
             mismatch = len(by) != len(self) if axis == 0 \
                 else len(by) != len(self.columns)
 
-            if all(obj in self for obj in by) and mismatch:
+            if all(obj in self for obj in by):
                 raise NotImplementedError(
                     "Groupby with lists of columns not yet supported.")
             elif mismatch:
