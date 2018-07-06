@@ -8,7 +8,7 @@ import ray
 import os
 import modin.pandas as pd
 
-from utils import time_logger
+from .utils import time_logger
 
 
 parser = argparse.ArgumentParser(description='arithmetic benchmark')
