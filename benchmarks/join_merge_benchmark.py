@@ -8,7 +8,7 @@ import ray
 import os
 import modin.pandas as pd
 
-from .utils import time_logger
+from utils import time_logger
 
 
 parser = argparse.ArgumentParser(description='arithmetic benchmark')
@@ -28,7 +28,10 @@ logging.basicConfig(filename=args.logfile, level=logging.INFO)
 
 df_left = pd.read_csv(file_left)
 df_right = pd.read_csv(file_right)
+
 blocks = df_left._block_partitions.flatten().tolist()
+ray.wait(blocks, len(blocks))
+blocks = df_right._block_partitions.flatten().tolist()
 ray.wait(blocks, len(blocks))
 
 with time_logger("Inner Join: {} & {}; Left Size: {} bytes; Right Size: {} "
