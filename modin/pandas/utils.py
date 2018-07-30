@@ -257,10 +257,11 @@ def to_pandas(df):
     Returns:
         A new pandas DataFrame.
     """
-    pandas_df = pandas.concat(ray.get(df._row_partitions), copy=False)
-    pandas_df.index = df.index
-    pandas_df.columns = df.columns
-    return pandas_df
+    return df._data_manager.to_pandas()
+    # pandas_df = pandas.concat(ray.get(df._row_partitions), copy=False)
+    # pandas_df.index = df.index
+    # pandas_df.columns = df.columns
+    # return pandas_df
 
 
 """

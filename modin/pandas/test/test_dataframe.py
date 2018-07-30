@@ -23,7 +23,8 @@ def ray_series_equals_pandas(ray_series, pandas_series):
 
 @pytest.fixture
 def ray_df_equals(ray_df1, ray_df2):
-    return ray_df1.equals(ray_df2)
+    # return ray_df1.equals(ray_df2)
+    return to_pandas(ray_df1).equals(to_pandas(ray_df2))
 
 
 @pytest.fixture
@@ -937,8 +938,8 @@ def test_copy(ray_df):
     new_ray_df = ray_df.copy()
 
     assert new_ray_df is not ray_df
-    assert np.array_equal(new_ray_df._block_partitions,
-                          ray_df._block_partitions)
+    assert np.array_equal(new_ray_df._data_manager.data.partitions,
+                          ray_df._data_manager.data.partitions)
 
 
 @pytest.fixture
@@ -1286,7 +1287,7 @@ def test_cumsum(ray_df, pandas_df):
 
 @pytest.fixture
 def test_describe(ray_df, pandas_df):
-    assert ray_df.describe().equals(pandas_df.describe())
+    assert ray_df_equals_pandas(ray_df.describe(), pandas_df.describe())
 
 
 @pytest.fixture

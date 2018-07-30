@@ -154,10 +154,8 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
                 kwargs["skipfooter"] = skipfooter
                 kwargs["skip_footer"] = skip_footer
 
-            partition_id, index_id = _read_csv_with_offset._submit(
-                args=(filepath, start, f.tell(), partition_kwargs_id,
-                      prefix_id),
-                num_return_vals=2)
+            partition_id, index_id = _read_csv_with_offset.remote(
+                filepath, start, f.tell(), partition_kwargs_id, prefix_id)
             partition_ids.append(partition_id)
             index_ids.append(index_id)
 
@@ -580,7 +578,7 @@ def get_index(index_name, *partition_indices):
     return index
 
 
-@ray.remote
+@ray.remote(num_return_vals=2)
 def _read_csv_with_offset(fn, start, end, kwargs={}, header=b''):
     bio = open(fn, 'rb')
     bio.seek(start)
