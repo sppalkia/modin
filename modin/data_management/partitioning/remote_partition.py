@@ -88,20 +88,45 @@ class RemotePartition(object):
         """
         raise NotImplementedError("Must be implemented in child class")
 
+    @classmethod
+    def length_extraction_fn(cls):
+        """The function to compute the length of the object in this partition.
+
+        Returns:
+            A callable function.
+        """
+        raise NotImplementedError("Must be implemented in child class")
+
+    @classmethod
+    def width_extraction_fn(cls):
+        """The function to compute the width of the object in this partition.
+
+        Returns:
+            A callable function.
+        """
+        raise NotImplementedError("Must be implemented in child class")
+
     _length_cache = None
+    _width_cache = None
 
     @property
     def length(self):
         if self._length_cache is None:
-            self._length_cache = self.apply(lambda df: len(df)).get()
-        return self._length_cache
+            cls = type(self)
+            func = cls.length_extraction_fn()
+            preprocessed_func = cls.preprocess_func(func)
 
-    _width_cache = None
+            self._length_cache = self.apply(preprocessed_func).get()
+        return self._length_cache
 
     @property
     def width(self):
         if self._width_cache is None:
-            self._width_cache = self.apply(lambda df: len(df.columns)).get()
+            cls = type(self)
+            func = cls.width_extraction_fn()
+            preprocessed_func = cls.preprocess_func(func)
+
+            self._width_cache = self.apply(preprocessed_func).get()
         return self._width_cache
 
 
@@ -167,6 +192,22 @@ class RayRemotePartition(RemotePartition):
             A ray.ObjectID.
         """
         return ray.put(func)
+
+    @classmethod
+    def length_extraction_fn(cls):
+        return length_fn_pandas
+
+    @classmethod
+    def width_extraction_fn(cls):
+        return width_fn_pandas
+
+
+def length_fn_pandas(df):
+    return len(df)
+
+
+def width_fn_pandas(df):
+    return len(df.columns)
 
 
 @ray.remote

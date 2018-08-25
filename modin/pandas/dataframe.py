@@ -31,7 +31,7 @@ from .utils import (to_pandas, _blocks_to_col, _blocks_to_row,
                     _map_partitions, _match_partitioning,
                     _partition_pandas_dataframe, _reindex_helper)
 from . import get_npartitions
-from ..data_management.data_manager import RayDataManager
+from ..data_management.data_manager import RayPandasDataManager
 from .index_metadata import _IndexMetadata
 from .iterator import PartitionIterator
 
@@ -175,7 +175,7 @@ class DataFrame(object):
             self._get_remote_dtypes()
 
         if data_manager is None:
-            self._data_manager = RayDataManager._from_old_block_partitions(self._block_partitions, index, columns)
+            self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
 
     def _get_row_partitions(self):
         empty_rows_mask = self._row_metadata._lengths > 0

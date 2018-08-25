@@ -9,7 +9,7 @@ from .partitioning.partition_collections import RayBlockPartitions
 from .partitioning.remote_partition import RayRemotePartition
 
 
-class DataManager(object):
+class PandasDataManager(object):
     """This class implements the logic necessary for operating on partitions
         with a Pandas backend. This logic is specific to Pandas.
     """
@@ -234,14 +234,14 @@ class DataManager(object):
         self_cols = self.columns
         other_cols = other.columns
 
-        def inter_data_op_builder(left, right, func):
+        def inter_data_op_builder(left, right, self_cols, other_cols, func):
             left.columns = self_cols
             right.columns = other_cols
             result = func(left, right)
             result.columns = pandas.RangeIndex(len(result.columns))
             return result
 
-        new_data = reindexed_self.inter_data_operation(1, lambda l, r: inter_data_op_builder(l, r, func), reindexed_other)
+        new_data = reindexed_self.inter_data_operation(1, lambda l, r: inter_data_op_builder(l, r, self_cols, other_cols, func), reindexed_other)
 
         return cls(new_data, joined_index, new_columns)
     # END Inter-Data operations
@@ -255,13 +255,12 @@ class DataManager(object):
     # END Single Manager scalar operations
 
     # Reindex/reset_index (may shuffle data)
-    #
     def reindex(self, axis, labels, **kwargs):
         cls = type(self)
 
         # To reindex, we need a function that will be shipped to each of the
         # partitions.
-        def reindex_builer(df, axis=0, old_labels=None, new_labels=None, **kwargs):
+        def reindex_builer(df, axis, old_labels, new_labels, **kwargs):
             if axis:
                 df.columns = old_labels
                 new_df = df.reindex(columns=new_labels, **kwargs)
@@ -280,7 +279,7 @@ class DataManager(object):
         new_index = self.index if axis else labels
         new_columns = labels if axis else self.columns
 
-        func = self._prepare_method(lambda df: reindex_builer(df, axis=axis, old_labels=old_labels, new_labels=labels, **kwargs))
+        func = self._prepare_method(lambda df: reindex_builer(df, axis, old_labels, labels, **kwargs))
 
         # The reindex can just be mapped over the axis we are modifying. This
         # is for simplicity in implementation. We specify num_splits here
@@ -849,7 +848,7 @@ class DataManager(object):
     # END Insert
 
 
-class RayDataManager(DataManager):
+class RayPandasDataManager(PandasDataManager):
 
     def __init__(self, block_partitions_object, index, columns):
         assert isinstance(block_partitions_object, RayBlockPartitions)
@@ -860,4 +859,4 @@ class RayDataManager(DataManager):
     @classmethod
     def _from_old_block_partitions(cls, blocks, index, columns):
         blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
-        return RayDataManager(RayBlockPartitions(blocks), index, columns)
+        return RayPandasDataManager(RayBlockPartitions(blocks), index, columns)
