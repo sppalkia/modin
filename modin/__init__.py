@@ -24,5 +24,14 @@ def git_version():
         return "Unknown"
 
 
+def get_execution_engine():
+    # In the future, when there are multiple engines and different ways of
+    # backing the DataFrame, there will have to be some changed logic here to
+    # decide these things. In the meantime, we will use the currently supported
+    # execution engine + backing (Pandas + Ray).
+    return "PandasBackedRayFactory"
+
+
 __git_revision__ = git_version()
 __version__ = "0.1.1"
+__execution_engine__ = get_execution_engine()
