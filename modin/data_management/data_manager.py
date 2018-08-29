@@ -764,7 +764,7 @@ class PandasDataManager(object):
         df.index = pandas.RangeIndex(len(df.index))
         df.columns = pandas.RangeIndex(len(df.columns))
         new_data = block_partitions_cls.from_pandas(df)
-        print(cls)
+
         return cls(new_data, new_index, new_columns)
 
     # __getitem__ methods

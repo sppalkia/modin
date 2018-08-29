@@ -16,7 +16,7 @@ class BaseFactory(object):
     def _determine_engine(cls):
         factory_name = \
             partition_format + "Backed" + execution_engine + "Factory"
-        print(factory_name)
+
         return getattr(sys.modules[__name__], factory_name)
 
     @classmethod
