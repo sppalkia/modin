@@ -5,25 +5,34 @@ from __future__ import print_function
 import sys
 
 from .. import __execution_engine__ as execution_engine
+from .. import __partition_format__ as partition_format
+from .data_manager import PandasDataManager
+from .partitioning.partition_collections import RayBlockPartitions
 
 
 class BaseFactory(object):
 
     @classmethod
     def _determine_engine(cls):
-        return getattr(sys.modules[__name__], execution_engine)
+        factory_name = \
+            partition_format + "Backed" + execution_engine + "Factory"
+        print(factory_name)
+        return getattr(sys.modules[__name__], factory_name)
 
     @classmethod
     def build_manager(cls):
-        return cls._determine_engine.build_manager()
+        return cls._determine_engine().build_manager()
 
     @classmethod
-    def from_pandas(cls):
-        return cls._determine_engine.from_pandas()
+    def from_pandas(cls, df):
+        return cls._determine_engine()._from_pandas(df)
+
+    @classmethod
+    def _from_pandas(cls, df):
+        return cls.data_mgr_cls.from_pandas(df, cls.block_partitions_cls)
 
 
 class PandasBackedRayFactory(BaseFactory):
 
-    @classmethod
-    def build_manager(cls):
-
+    data_mgr_cls = PandasDataManager
+    block_partitions_cls = RayBlockPartitions

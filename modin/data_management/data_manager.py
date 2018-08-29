@@ -5,7 +5,7 @@ from __future__ import print_function
 import numpy as np
 import pandas
 
-from .partitioning.partition_collections import RayBlockPartitions
+from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
 from .partitioning.remote_partition import RayRemotePartition
 
 
@@ -13,6 +13,12 @@ class PandasDataManager(object):
     """This class implements the logic necessary for operating on partitions
         with a Pandas backend. This logic is specific to Pandas.
     """
+
+    def __init__(self, block_partitions_object, index, columns):
+        assert isinstance(block_partitions_object, BlockPartitions)
+        self.data = block_partitions_object
+        self.index = index
+        self.columns = columns
 
     # Index and columns objects
     # These objects are currently not distributed.
@@ -742,12 +748,24 @@ class PandasDataManager(object):
         return
     # END Data Management Methods
 
-    # To Pandas
+    # To/From Pandas
     def to_pandas(self):
         df = self.data.to_pandas(is_transposed=self._is_transposed)
         df.index = self.index
         df.columns = self.columns
         return df
+
+    @classmethod
+    def from_pandas(cls, df, block_partitions_cls):
+        new_index = df.index
+        new_columns = df.columns
+
+        # Set the columns to RangeIndex for memory efficiency
+        df.index = pandas.RangeIndex(len(df.index))
+        df.columns = pandas.RangeIndex(len(df.columns))
+        new_data = block_partitions_cls.from_pandas(df)
+        print(cls)
+        return cls(new_data, new_index, new_columns)
 
     # __getitem__ methods
     def getitem_single_key(self, key):
@@ -850,13 +868,7 @@ class PandasDataManager(object):
 
 class RayPandasDataManager(PandasDataManager):
 
-    def __init__(self, block_partitions_object, index, columns):
-        assert isinstance(block_partitions_object, RayBlockPartitions)
-        self.data = block_partitions_object
-        self.index = index
-        self.columns = columns
-
     @classmethod
     def _from_old_block_partitions(cls, blocks, index, columns):
         blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
-        return RayPandasDataManager(RayBlockPartitions(blocks), index, columns)
+        return PandasDataManager(RayBlockPartitions(blocks), index, columns)

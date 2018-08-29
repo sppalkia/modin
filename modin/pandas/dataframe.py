@@ -24,9 +24,9 @@ import re
 import sys
 import warnings
 
-from .utils import (to_pandas, _blocks_to_col, _blocks_to_row,
+from .utils import (from_pandas, to_pandas, _blocks_to_col, _blocks_to_row,
                     _compile_remote_dtypes, _concat_index, _co_op_helper,
-                    _create_block_partitions, _create_blocks_helper,
+                    _create_block_partitions,
                     _deploy_func, _fix_blocks_dimensions, _inherit_docstrings,
                     _map_partitions, _match_partitioning,
                     _partition_pandas_dataframe, _reindex_helper)
@@ -98,19 +98,7 @@ class DataFrame(object):
             # Cache dtypes
             self._dtypes_cache = pandas_df.dtypes
 
-            # TODO convert _partition_pandas_dataframe to block partitioning.
-            row_partitions = \
-                _partition_pandas_dataframe(pandas_df,
-                                            num_partitions=get_npartitions())
-
-            self._block_partitions = \
-                _create_block_partitions(row_partitions, axis=0,
-                                         length=len(pandas_df.columns))
-
-            # Set in case we were only given a single row/column for below.
-            axis = 0
-            columns = pandas_df.columns
-            index = pandas_df.index
+            self._data_manager = from_pandas(pandas_df)._data_manager
         else:
             if data_manager is not None:
                 self._data_manager = data_manager
@@ -151,31 +139,31 @@ class DataFrame(object):
                         _create_block_partitions(partitions, axis=axis,
                                                  length=axis_length)
 
-        # assert self._block_partitions.ndim == 2, "Block Partitions must be 2D."
+            # assert self._block_partitions.ndim == 2, "Block Partitions must be 2D."
 
-        # Create the row and column index objects for using our partitioning.
-        # If the objects haven't been inherited, then generate them
-        if row_metadata is not None:
-            self._row_metadata = row_metadata.copy()
-            if index is not None:
-                self.index = index
-        elif data_manager is None:
-            self._row_metadata = _IndexMetadata(
-                self._block_partitions[:, 0], index=index, axis=0)
+            # Create the row and column index objects for using our partitioning.
+            # If the objects haven't been inherited, then generate them
+            if row_metadata is not None:
+                self._row_metadata = row_metadata.copy()
+                if index is not None:
+                    self.index = index
+            elif data_manager is None:
+                self._row_metadata = _IndexMetadata(
+                    self._block_partitions[:, 0], index=index, axis=0)
 
-        if col_metadata is not None:
-            self._col_metadata = col_metadata.copy()
-            if columns is not None:
-                self.columns = columns
-        elif data_manager is None:
-            self._col_metadata = _IndexMetadata(
-                self._block_partitions[0, :], index=columns, axis=1)
+            if col_metadata is not None:
+                self._col_metadata = col_metadata.copy()
+                if columns is not None:
+                    self.columns = columns
+            elif data_manager is None:
+                self._col_metadata = _IndexMetadata(
+                    self._block_partitions[0, :], index=columns, axis=1)
 
-        if self._dtypes_cache is None and data_manager is None:
-            self._get_remote_dtypes()
+            if self._dtypes_cache is None and data_manager is None:
+                self._get_remote_dtypes()
 
-        if data_manager is None:
-            self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
+            if data_manager is None:
+                self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
 
     def _get_row_partitions(self):
         empty_rows_mask = self._row_metadata._lengths > 0
