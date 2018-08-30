@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import pandas
 import ray
 
 
@@ -167,7 +168,10 @@ class RayRemotePartition(RemotePartition):
         Returns:
             A Pandas DataFrame.
         """
-        return self.get()
+        dataframe = self.get()
+        assert type(dataframe) is pandas.DataFrame()
+
+        return dataframe
 
     @classmethod
     def put(cls, obj):

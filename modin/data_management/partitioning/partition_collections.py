@@ -359,8 +359,9 @@ class BlockPartitions(object):
             A Pandas Index object.
         """
         if axis == 0:
+            func = self.preprocess_func(lambda df: df.index)
             # We grab the first column of blocks and extract the indices
-            new_indices = [idx.apply(lambda df: df.index).get() for idx in self.partitions.T[0]]
+            new_indices = [idx.apply(func).get() for idx in self.partitions.T[0]]
             # This is important because sometimes we have resized the data. The new
             # sizes will not be valid if we are trying to compute the index on a
             # new object that has a different length.
@@ -369,7 +370,8 @@ class BlockPartitions(object):
             else:
                 cumulative_block_lengths = np.array(self.block_lengths).cumsum()
         else:
-            new_indices = [idx.apply(lambda df: df.columns).get() for idx in self.partitions[0]]
+            func = self.preprocess_func(lambda df: df.columns)
+            new_indices = [idx.apply(func).get() for idx in self.partitions[0]]
 
             if old_blocks is not None:
                 cumulative_block_lengths = np.array(old_blocks.block_widths).cumsum()
@@ -545,6 +547,7 @@ class BlockPartitions(object):
             indices = [indices]
 
         partitions_dict = self._get_dict_of_block_index(axis, indices)
+        preprocessed_func = self.preprocess_func(func)
 
         # Since we might be keeping the remaining blocks that are not modified,
         # we have to also keep the block_partitions object in the correct
@@ -558,10 +561,10 @@ class BlockPartitions(object):
 
         if not keep_remaining:
             # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_apply[i].apply(func, internal_indices=partitions_dict[i]) for i in partitions_dict])
+            result = np.array([partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in partitions_dict])
         else:
             # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
+            result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
 
         return cls(result.T) if not axis else cls(result)
 
