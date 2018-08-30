@@ -7,7 +7,7 @@ import sys
 import pandas
 import numpy as np
 import modin.pandas as pd
-from modin.pandas.utils import (from_pandas, to_pandas)
+from modin.pandas.utils import from_pandas, to_pandas
 
 PY2 = False
 if sys.version_info.major < 3:
@@ -54,7 +54,7 @@ def test_simple_row_groupby():
         'col5': [-4, -5, -6, -7]
     })
 
-    ray_df = from_pandas(pandas_df, 2)
+    ray_df = from_pandas(pandas_df)
 
     by = [1, 2, 1, 2]
     n = 1
@@ -133,7 +133,7 @@ def test_single_group_row_groupby():
         'col5': [-4, 5, -6, -7]
     })
 
-    ray_df = from_pandas(pandas_df, 2)
+    ray_df = from_pandas(pandas_df)
 
     by = [1, 1, 1, 1]
     n = 6
@@ -208,7 +208,7 @@ def test_large_row_groupby():
     pandas_df = pandas.DataFrame(
         np.random.randint(0, 8, size=(100, 4)), columns=list('ABCD'))
 
-    ray_df = from_pandas(pandas_df, 2)
+    ray_df = from_pandas(pandas_df)
 
     by = [str(i) for i in pandas_df['A'].tolist()]
     n = 4
@@ -287,7 +287,7 @@ def test_simple_col_groupby():
         'col5': [-4, 5, 6, -7]
     })
 
-    ray_df = from_pandas(pandas_df, 2)
+    ray_df = from_pandas(pandas_df)
 
     by = [1, 2, 3, 2, 1]
 

@@ -6,6 +6,7 @@ import pandas
 import ray
 
 from .remote_partition import RayRemotePartition
+from .utils import compute_chunksize
 
 
 class AxisPartition(object):
@@ -109,12 +110,10 @@ def split_result_of_axis_func_pandas(axis, num_splits, result):
     """
     # We do this to restore block partitioning
     if axis == 0 or type(result) is pandas.Series:
-        # We do this to avoid zeros and having an extremely large last partition
-        chunksize = len(result) // num_splits if len(result) % num_splits == 0 else len(result) // num_splits + 1
+        chunksize = compute_chunksize(len(result), num_splits)
         return [result.iloc[chunksize * i: chunksize * (i + 1)] for i in range(num_splits)]
     else:
-        # See note above about avoiding zeros.
-        chunksize = len(result.columns) // num_splits if len(result.columns) % num_splits == 0 else len(result.columns) // num_splits + 1
+        chunksize = compute_chunksize(len(result.columns), num_splits)
         return [result.iloc[:, chunksize * i: chunksize * (i + 1)] for i in range(num_splits)]
 
 

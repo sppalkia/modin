@@ -11,6 +11,7 @@ import time
 import gc
 
 from . import get_npartitions
+from ..data_management.factories import BaseFactory
 
 _NAN_BLOCKS = {}
 _MEMOIZER_CAPACITY = 1000  # Capacity per function
@@ -231,7 +232,7 @@ def _partition_pandas_dataframe(df, num_partitions=None, row_chunksize=None):
     return row_partitions
 
 
-def from_pandas(df, num_partitions=None, chunksize=None):
+def from_pandas(df):
     """Converts a pandas DataFrame to a Ray DataFrame.
     Args:
         df (pandas.DataFrame): The pandas DataFrame to convert.
@@ -243,11 +244,7 @@ def from_pandas(df, num_partitions=None, chunksize=None):
     """
     from .dataframe import DataFrame
 
-    row_partitions = \
-        _partition_pandas_dataframe(df, num_partitions, chunksize)
-
-    return DataFrame(
-        row_partitions=row_partitions, columns=df.columns, index=df.index)
+    return DataFrame(data_manager=BaseFactory.from_pandas(df))
 
 
 def to_pandas(df):

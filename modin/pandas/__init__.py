@@ -29,7 +29,6 @@ os.environ['OMP_NUM_THREADS'] = "1"
 
 num_cpus = ray.global_state.cluster_resources()['CPU']
 DEFAULT_NPARTITIONS = int(num_cpus)
-EXECUTION_ENGINE = "ray"
 
 
 def set_npartition_default(n):

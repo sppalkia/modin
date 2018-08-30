@@ -7,6 +7,7 @@ import pandas
 
 from .remote_partition import RayRemotePartition
 from .axis_partition import RayColumnPartition, RayRowPartition
+from .utils import compute_chunksize
 
 
 class BlockPartitions(object):
@@ -188,7 +189,7 @@ class BlockPartitions(object):
         # Since we are already splitting the DataFrame back up after an
         # operation, we will just use this time to compute the number of
         # partitions as best we can right now.
-        num_splits = self._compute_num_partitions()
+        num_splits = cls._compute_num_partitions()
 
         preprocessed_map_func = self.preprocess_func(map_func)
         partitions = self.column_partitions if not axis else self.row_partitions
@@ -330,11 +331,17 @@ class BlockPartitions(object):
             return result
 
     @classmethod
-    def from_pandas(cls, dataframe, num_splits):
-        if num_splits is None:
-            num_splits = cls._compute_num_partitions()
+    def from_pandas(cls, df):
+        num_splits = cls._compute_num_partitions()
+        put_func = cls._partition_class.put
 
-        pass
+        row_chunksize = compute_chunksize(len(df), num_splits)
+        col_chunksize = compute_chunksize(len(df.columns), num_splits)
+
+        parts = [[put_func(df.iloc[i: i + row_chunksize, j: j + col_chunksize])
+                  for j in range(0, len(df.columns), col_chunksize)]
+                 for i in range(0, len(df), row_chunksize)]
+        return cls(np.array(parts))
 
     def get_indices(self, axis=0, old_blocks=None):
         """This gets the internal indices stored in the partitions.
@@ -387,7 +394,8 @@ class BlockPartitions(object):
 
         return full_indices
 
-    def _compute_num_partitions(self):
+    @classmethod
+    def _compute_num_partitions(cls):
         """Currently, this method returns the default. In the future it will
             estimate the optimal number of partitions.
 
@@ -582,7 +590,7 @@ class BlockPartitions(object):
 
         func = self.preprocess_func(func)
 
-        result = np.array([partitions[i].apply(func, num_splits=self._compute_num_partitions(), other_axis_partition=other_partitions[i]) for i in range(len(partitions))])
+        result = np.array([partitions[i].apply(func, num_splits=cls._compute_num_partitions(), other_axis_partition=other_partitions[i]) for i in range(len(partitions))])
         return cls(result) if axis else cls(result.T)
 
     def __getitem__(self, key):

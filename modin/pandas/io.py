@@ -178,13 +178,13 @@ def _read_csv_from_pandas(filepath_or_buffer, kwargs):
     pd_obj = pandas.read_csv(filepath_or_buffer, **kwargs)
 
     if isinstance(pd_obj, pandas.DataFrame):
-        return from_pandas(pd_obj, get_npartitions())
+        return from_pandas(pd_obj)
     elif isinstance(pd_obj, pandas.io.parsers.TextFileReader):
         # Overwriting the read method should return a ray DataFrame for calls
         # to __next__ and get_chunk
         pd_read = pd_obj.read
         pd_obj.read = lambda *args, **kwargs: \
-            from_pandas(pd_read(*args, **kwargs), get_npartitions())
+            from_pandas(pd_read(*args, **kwargs))
 
     return pd_obj
 
@@ -391,7 +391,7 @@ def read_json(path_or_buf=None,
         path_or_buf, orient, typ, dtype, convert_axes, convert_dates,
         keep_default_dates, numpy, precise_float, date_unit, encoding, lines,
         chunksize, compression)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -419,7 +419,7 @@ def read_html(io,
                                   skiprows, attrs, parse_dates, tupleize_cols,
                                   thousands, encoding, decimal, converters,
                                   na_values, keep_default_na)
-    ray_frame = from_pandas(port_frame[0], get_npartitions())
+    ray_frame = from_pandas(port_frame[0])
 
     return ray_frame
 
@@ -430,7 +430,7 @@ def read_clipboard(sep=r'\s+'):
                   PendingDeprecationWarning)
 
     port_frame = pandas.read_clipboard(sep)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -462,7 +462,7 @@ def read_excel(io,
         io, sheet_name, header, skiprows, skip_footer, index_col, names,
         usecols, parse_dates, date_parser, na_values, thousands, convert_float,
         converters, dtype, true_values, false_values, engine, squeeze)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -473,7 +473,7 @@ def read_hdf(path_or_buf, key=None, mode='r'):
                   PendingDeprecationWarning)
 
     port_frame = pandas.read_hdf(path_or_buf, key, mode)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -484,7 +484,7 @@ def read_feather(path, nthreads=1):
                   PendingDeprecationWarning)
 
     port_frame = pandas.read_feather(path)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -495,7 +495,7 @@ def read_msgpack(path_or_buf, encoding='utf-8', iterator=False):
                   PendingDeprecationWarning)
 
     port_frame = pandas.read_msgpack(path_or_buf, encoding, iterator)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -519,7 +519,7 @@ def read_stata(filepath_or_buffer,
                                    convert_categoricals, encoding, index_col,
                                    convert_missing, preserve_dtypes, columns,
                                    order_categoricals, chunksize, iterator)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -536,7 +536,7 @@ def read_sas(filepath_or_buffer,
 
     port_frame = pandas.read_sas(filepath_or_buffer, format, index, encoding,
                                  chunksize, iterator)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -547,7 +547,7 @@ def read_pickle(path, compression='infer'):
                   PendingDeprecationWarning)
 
     port_frame = pandas.read_pickle(path, compression)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
@@ -566,7 +566,7 @@ def read_sql(sql,
 
     port_frame = pandas.read_sql(sql, con, index_col, coerce_float, params,
                                  parse_dates, columns, chunksize)
-    ray_frame = from_pandas(port_frame, get_npartitions())
+    ray_frame = from_pandas(port_frame)
 
     return ray_frame
 
