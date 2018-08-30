@@ -3303,9 +3303,11 @@ class DataFrame(object):
             else 0
 
         if axis == 0:
-            axis_length = len(self._row_metadata)
+            axis_labels = self._data_manager.index
+            axis_length = len(axis_labels)
         else:
-            axis_length = len(self._col_metadata)
+            axis_labels = self._data_manager.column
+            axis_length = len(axis_labels)
 
         if weights is not None:
 
@@ -3383,15 +3385,6 @@ class DataFrame(object):
                 columns=[] if axis == 1 else self.columns,
                 index=self.index if axis == 1 else [])
 
-        if axis == 1:
-            axis_labels = self.columns
-            partition_metadata = self._col_metadata
-            partitions = self._col_partitions
-        else:
-            axis_labels = self.index
-            partition_metadata = self._row_metadata
-            partitions = self._row_partitions
-
         if random_state is not None:
             # Get a random number generator depending on the type of
             # random_state that is passed in
@@ -3407,35 +3400,19 @@ class DataFrame(object):
             # choose random numbers and then get corresponding labels from
             # chosen axis
             sample_indices = random_num_gen.randint(
-                low=0, high=len(partition_metadata), size=n)
+                low=0, high=axis_length, size=n)
             samples = axis_labels[sample_indices]
         else:
             # randomly select labels from chosen axis
             samples = np.random.choice(
                 a=axis_labels, size=n, replace=replace, p=weights)
 
-        # create an array of (partition, index_within_partition) tuples for
-        # each sample
-        part_ind_tuples = [partition_metadata[sample] for sample in samples]
-
         if axis == 1:
-            # tup[0] refers to the partition number and tup[1] is the index
-            # within that partition
-            new_cols = [
-                _deploy_func.remote(lambda df: df.iloc[:, [tup[1]]],
-                                    partitions[tup[0]])
-                for tup in part_ind_tuples
-            ]
-            return DataFrame(
-                col_partitions=new_cols, columns=samples, index=self.index)
+            data_manager = self._data_manager.getitem_col_array(samples)
+            return DataFrame(data_manager=data_manager)
         else:
-            new_rows = [
-                _deploy_func.remote(lambda df: df.loc[[tup[1]]],
-                                    partitions[tup[0]])
-                for tup in part_ind_tuples
-            ]
-            return DataFrame(
-                row_partitions=new_rows, columns=self.columns, index=samples)
+            data_manager = self._data_manager.getitem_row_array(samples)
+            return DataFrame(data_manager=data_manager)
 
     def select(self, crit, axis=0):
         raise NotImplementedError(
