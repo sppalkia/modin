@@ -169,7 +169,7 @@ class RayRemotePartition(RemotePartition):
             A Pandas DataFrame.
         """
         dataframe = self.get()
-        assert type(dataframe) is pandas.DataFrame()
+        assert type(dataframe) is pandas.DataFrame or type(dataframe) is pandas.Series
 
         return dataframe
 

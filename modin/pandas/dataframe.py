@@ -18,7 +18,6 @@ import itertools
 import io
 import functools
 import numpy as np
-from numpy.testing import assert_equal
 import ray
 import re
 import sys
@@ -26,11 +25,9 @@ import warnings
 
 from .utils import (from_pandas, to_pandas, _blocks_to_col, _blocks_to_row,
                     _compile_remote_dtypes, _concat_index, _co_op_helper,
-                    _create_block_partitions,
-                    _deploy_func, _fix_blocks_dimensions, _inherit_docstrings,
-                    _map_partitions, _match_partitioning,
-                    _partition_pandas_dataframe, _reindex_helper)
-from . import get_npartitions
+                    _create_block_partitions, _deploy_func,
+                    _fix_blocks_dimensions, _inherit_docstrings,
+                    _map_partitions, _match_partitioning,_reindex_helper)
 from ..data_management.data_manager import RayPandasDataManager
 from .index_metadata import _IndexMetadata
 from .iterator import PartitionIterator
@@ -138,26 +135,6 @@ class DataFrame(object):
                     self._block_partitions = \
                         _create_block_partitions(partitions, axis=axis,
                                                  length=axis_length)
-
-            # assert self._block_partitions.ndim == 2, "Block Partitions must be 2D."
-
-            # Create the row and column index objects for using our partitioning.
-            # If the objects haven't been inherited, then generate them
-            if row_metadata is not None:
-                self._row_metadata = row_metadata.copy()
-                if index is not None:
-                    self.index = index
-            elif data_manager is None:
-                self._row_metadata = _IndexMetadata(
-                    self._block_partitions[:, 0], index=index, axis=0)
-
-            if col_metadata is not None:
-                self._col_metadata = col_metadata.copy()
-                if columns is not None:
-                    self.columns = columns
-            elif data_manager is None:
-                self._col_metadata = _IndexMetadata(
-                    self._block_partitions[0, :], index=columns, axis=1)
 
             if self._dtypes_cache is None and data_manager is None:
                 self._get_remote_dtypes()
@@ -427,72 +404,15 @@ class DataFrame(object):
         """
         return len(self.index), len(self.columns)
 
-    def _update_inplace(self,
-                        new_manager=None,
-                        row_partitions=None,
-                        col_partitions=None,
-                        block_partitions=None,
-                        columns=None,
-                        index=None,
-                        col_metadata=None,
-                        row_metadata=None):
-        """updates the current DataFrame inplace.
-
-        Behavior should be similar to the constructor, given the corresponding
-        arguments. Note that len(columns) and len(index) should match the
-        corresponding dimensions in the partition(s) passed in, otherwise this
-        function will complain.
+    def _update_inplace(self, new_manager):
+        """Updates the current DataFrame inplace.
 
         Args:
-            row_partitions ([ObjectID]):
-                The new partitions to replace self._row_partitions directly
-            col_partitions ([ObjectID]):
-                The new partitions to replace self._col_partitions directly
-            columns (pandas.Index):
-                Index of the column dimension to replace existing columns
-            index (pandas.Index):
-                Index of the row dimension to replace existing index
-
-        Note:
-            If `columns` or `index` are not supplied, they will revert to
-                default columns or index respectively, as this function does
-                not have enough contextual info to rebuild the indexes
-                correctly based on the addition/subtraction of rows/columns.
+            new_manager: The new DataManager to use to manage the data
         """
-        assert row_partitions is not None or col_partitions is not None\
-            or block_partitions is not None or new_manager is not None, \
-            "To update inplace, a new manager must be set."
-
-        if new_manager is not None:
-            old_manager = self._data_manager
-            self._data_manager = new_manager
-            old_manager.free()
-            return
-
-        if block_partitions is not None:
-            self._block_partitions = block_partitions
-
-        elif row_partitions is not None:
-            self._row_partitions = row_partitions
-
-        elif col_partitions is not None:
-            self._col_partitions = col_partitions
-
-        if col_metadata is not None:
-            self._col_metadata = col_metadata
-        else:
-            assert columns is not None, \
-                "If col_metadata is None, columns must be passed in"
-            self._col_metadata = _IndexMetadata(
-                self._block_partitions[0, :], index=columns, axis=1)
-        if row_metadata is not None:
-            self._row_metadata = row_metadata
-        else:
-            # Index can be None for default index, so we don't check
-            self._row_metadata = _IndexMetadata(
-                self._block_partitions[:, 0], index=index, axis=0)
-
-        # Update dtypes
+        old_manager = self._data_manager
+        self._data_manager = new_manager
+        old_manager.free()
         self._get_remote_dtypes()
 
     def add_prefix(self, prefix):
@@ -1086,7 +1006,8 @@ class DataFrame(object):
                 index=new_index,
                 col_metadata=self._col_metadata)
         elif callable(func):
-            return self._callable_function(func, axis=axis, *args, **kwds)
+            # return self._callable_function(func, axis=axis, *args, **kwds)
+            return self._data_manager.apply(func, axis, *args, **kwds)
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(

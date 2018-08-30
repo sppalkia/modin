@@ -137,7 +137,7 @@ class PandasDataManager(object):
             return self.index.join(other_index, how=how, sort=sort)
 
     def concat(self, axis, other, **kwargs):
-        ignore_index = kwargs.get("ignore_index", default=False)
+        ignore_index = kwargs.get("ignore_index", False)
         if axis == 0:
             if isinstance(other, list):
                 return self._append_list_of_managers(other, ignore_index)
@@ -186,10 +186,10 @@ class PandasDataManager(object):
         cls = type(self)
 
         # Uses join's default value (though should not revert to default)
-        how = kwargs.get("how", default="left")
-        sort = kwargs.get("sort", default=False)
-        lsuffix = kwargs.get("lsuffix", default="")
-        rsuffix = kwargs.get("rsuffix", default="")
+        how = kwargs.get("how", "left")
+        sort = kwargs.get("sort", False)
+        lsuffix = kwargs.get("lsuffix", "")
+        rsuffix = kwargs.get("rsuffix", "")
 
         joined_index = self._join_index_objects(1, other.index, how, sort=sort)
 
@@ -214,10 +214,10 @@ class PandasDataManager(object):
         cls = type(self)
 
         # Uses join's default value (though should not revert to default)
-        how = kwargs.get("how", default="left")
-        sort = kwargs.get("sort", default=False)
-        lsuffix = kwargs.get("lsuffix", default="")
-        rsuffix = kwargs.get("rsuffix", default="")
+        how = kwargs.get("how", "left")
+        sort = kwargs.get("sort", False)
+        lsuffix = kwargs.get("lsuffix", "")
+        rsuffix = kwargs.get("rsuffix", "")
 
         assert isinstance(others, list), \
             "This method is for lists of DataManager objects only"
@@ -322,7 +322,7 @@ class PandasDataManager(object):
 
     def reset_index(self, **kwargs):
         cls = type(self)
-        drop = kwargs.get("drop", default=False)
+        drop = kwargs.get("drop", False)
         new_index = pandas.RangeIndex(len(self.index))
 
         if not drop:
@@ -381,7 +381,7 @@ class PandasDataManager(object):
         return result
 
     def count(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         map_func = self._prepare_method(pandas.DataFrame.count, **kwargs)
         reduce_func = self._prepare_method(pandas.DataFrame.sum, **kwargs)
         return self.full_reduce(axis, map_func, reduce_func)
@@ -401,19 +401,19 @@ class PandasDataManager(object):
 
     def min(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.min, **kwargs)
         return self.full_reduce(axis, func)
 
     def prod(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.prod, **kwargs)
         return self.full_reduce(axis, func)
 
     def sum(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.sum, **kwargs)
         return self.full_reduce(axis, func)
     # END Full Reduce operations
@@ -483,12 +483,12 @@ class PandasDataManager(object):
         return result
 
     def all(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.all, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def any(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.any, **kwargs)
         return self.full_axis_reduce(func, axis)
 
@@ -500,7 +500,7 @@ class PandasDataManager(object):
             df.index = pandas.RangeIndex(len(df.index))
             return df.idxmax(**kwargs)
 
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(idxmax_builder, **kwargs)
         max_result = self.full_axis_reduce(func, axis)
         # Because our internal partitions don't track the external index, we
@@ -515,7 +515,7 @@ class PandasDataManager(object):
             df.index = pandas.RangeIndex(len(df.index))
             return df.idxmin(**kwargs)
 
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(idxmin_builder, **kwargs)
         min_result = self.full_axis_reduce(func, axis)
         # Because our internal partitions don't track the external index, we
@@ -552,36 +552,36 @@ class PandasDataManager(object):
 
     def median(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.median, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def nunique(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.nunique, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def skew(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.skew, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def std(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.std, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def var(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.var, **kwargs)
         return self.full_axis_reduce(func, axis)
 
     def quantile_for_single_value(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
-        q = kwargs.get("q", default=0.5)
+        axis = kwargs.get("axis", 0)
+        q = kwargs.get("q", 0.5)
         assert type(q) is float
 
         func = self._prepare_method(pandas.DataFrame.quantile, **kwargs)
@@ -618,8 +618,8 @@ class PandasDataManager(object):
 
     def quantile_for_list_of_values(self, **kwargs):
         cls = type(self)
-        axis = kwargs.get("axis", default=0)
-        q = kwargs.get("q", default=0.5)
+        axis = kwargs.get("axis", 0)
+        q = kwargs.get("q", 0.5)
         assert isinstance(q, (pandas.Series, np.ndarray, pandas.Index, list))
 
         func = self._prepare_method(pandas.DataFrame.quantile, **kwargs)
@@ -632,7 +632,7 @@ class PandasDataManager(object):
 
     def _cumulative_builder(self, func, **kwargs):
         cls = type(self)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(func, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
         return cls(new_data, self.index, self.columns)
@@ -650,10 +650,10 @@ class PandasDataManager(object):
         return self._cumulative_builder(pandas.DataFrame.cumprod, **kwargs)
 
     def dropna(self, **kwargs):
-        axis = kwargs.get("axis", default=0)
-        subset = kwargs.get("subset", default=None)
-        thresh = kwargs.get("thresh", default=None)
-        how = kwargs.get("how", default="any")
+        axis = kwargs.get("axis", 0)
+        subset = kwargs.get("subset", None)
+        thresh = kwargs.get("thresh", None)
+        how = kwargs.get("how", "any")
         # We need to subset the axis that we care about with `subset`. This
         # will be used to determine the number of values that are NA.
         if subset is not None:
@@ -693,7 +693,7 @@ class PandasDataManager(object):
     def mode(self, **kwargs):
         cls = type(self)
 
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.mode, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
 
@@ -714,8 +714,8 @@ class PandasDataManager(object):
     def fillna(self, **kwargs):
         cls = type(self)
 
-        axis = kwargs.get("axis", default=0)
-        value = kwargs.get("value", default=None)
+        axis = kwargs.get("axis", 0)
+        value = kwargs.get("value", None)
 
         if isinstance(value, dict):
             return
@@ -738,7 +738,7 @@ class PandasDataManager(object):
     def rank(self, **kwargs):
         cls = type(self)
 
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.rank, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
         if axis:
@@ -921,6 +921,52 @@ class PandasDataManager(object):
         new_columns = self.columns.insert(loc, column)
         return cls(new_data, self.index, new_columns)
     # END Insert
+
+    # UDF (apply and agg) methods
+    # There is a wide range of behaviors that are supported, so a lot of the
+    # logic can get a bit convoluted.
+    def apply(self, func, axis, *args, **kwargs):
+
+        if callable(func):
+            return self._callable_func(func, axis, *args, **kwargs)
+        else:
+            pass
+
+    def _callable_func(self, func, axis, *args, **kwargs):
+        cls = type(self)
+
+        def callable_apply_builder(df, func, axis, index, *args, **kwargs):
+            if not axis:
+                df.index = index
+            else:
+                df.columns = index
+
+            result = df.agg(func, *args, **kwargs)
+            return result
+
+        index = self.index if not axis else self.columns
+
+        func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
+        result_data = self.map_across_full_axis(axis, func_prepared)
+        return result_data
+        if not axis:
+            try:
+                index = result_data.get_indices(axis)
+                columns = result_data.get_indices(axis ^ 1)
+            except Exception:
+                series_result = result_data.to_pandas(False)
+                series_result.index = self.columns
+                return series_result
+        else:
+            try:
+                index = result_data.get_indices(axis ^ 1)
+                columns = result_data.get_indices(axis)
+            except Exception:
+                series_result = result_data.to_pandas(False)
+                series_result.index = self.index
+                return series_result
+
+        return cls(result_data, index, columns)
 
 
 class RayPandasDataManager(PandasDataManager):

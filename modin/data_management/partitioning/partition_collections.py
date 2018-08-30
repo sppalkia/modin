@@ -318,7 +318,7 @@ class BlockPartitions(object):
             return self.transpose().to_pandas(False).T
         else:
             retrieved_objects = [[obj.to_pandas() for obj in part] for part in self.partitions]
-
+            print(retrieved_objects[0])
             if all(isinstance(part, pandas.Series) for row in retrieved_objects for part in row):
                 axis = 0
             elif all(isinstance(part, pandas.DataFrame) for row in retrieved_objects for part in row):
