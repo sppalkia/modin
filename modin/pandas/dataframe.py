@@ -1006,7 +1006,8 @@ class DataFrame(object):
                 index=new_index,
                 col_metadata=self._col_metadata)
         elif callable(func):
-            return self._callable_function(func, axis=axis, *args, **kwds)
+            # return self._callable_function(func, axis=axis, *args, **kwds)
+            return self._data_manager.apply(func, axis, *args, **kwds)
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(
