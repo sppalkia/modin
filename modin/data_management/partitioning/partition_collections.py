@@ -338,9 +338,16 @@ class BlockPartitions(object):
         row_chunksize = compute_chunksize(len(df), num_splits)
         col_chunksize = compute_chunksize(len(df.columns), num_splits)
 
-        parts = [[put_func(df.iloc[i: i + row_chunksize, j: j + col_chunksize])
-                  for j in range(0, len(df.columns), col_chunksize)]
-                 for i in range(0, len(df), row_chunksize)]
+        # Each chunk must have a RangeIndex that spans its length and width
+        # according to our invariant.
+        def chunk_builder(i, j):
+            chunk = df.iloc[i: i + row_chunksize, j: j + col_chunksize]
+            chunk.index = pandas.RangeIndex(len(chunk.index))
+            chunk.columns = pandas.RangeIndex(len(chunk.columns))
+            return put_func(chunk)
+
+        parts = [[chunk_builder(i, j) for j in range(0, len(df.columns), col_chunksize)] for i in range(0, len(df), row_chunksize)]
+
         return cls(np.array(parts))
 
     def get_indices(self, axis=0, index_func=None, old_blocks=None):
@@ -353,6 +360,10 @@ class BlockPartitions(object):
         Args:
             axis: This axis to extract the labels. (0 - index, 1 - columns).
             index_func: The function to be used to extract the function.
+            scale_index: True if we need to add the lengths of previous blocks,
+                False otherwise. This should be True if each block had the
+                index reset based on the length of that particular block,
+                otherwise it should be False.
             old_blocks: An optional previous object that this object was
                 created from. This is used to compute the correct offsets.
 

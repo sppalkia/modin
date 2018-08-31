@@ -55,20 +55,28 @@ class PandasDataManager(object):
 
     # END Index and columns objects
 
-    def compute_index(self, data_object):
+    def compute_index(self, axis, data_object, compute_diff=True):
         """Computes the index after a number of rows have been removed.
 
         Note: In order for this to be used properly, the indexes must not be
             changed before you compute this.
 
         Args:
+            axis: The axis to extract the index from.
             data_object: The new data object to extract the index from.
+            compute_diff: True to use `self` to compute the index from self
+                rather than data_object. This is used when the dimension of the
+                index may have changed, but the deleted rows/columns are
+                unknown
 
         Returns:
             A new pandas.Index object.
         """
-        new_indices = data_object.get_indices(axis=0, index_func=lambda df: pandas_index_extraction(df, 0), old_blocks=self.data)
-        return self.index[new_indices]
+        index_obj = self.index if not axis else self.columns
+        old_blocks = self.data if compute_diff else None
+        new_indices = data_object.get_indices(axis=axis, index_func=lambda df: pandas_index_extraction(df, axis), old_blocks=old_blocks)
+
+        return index_obj[new_indices] if compute_diff else new_indices
     # END Index and columns objects
 
     # Internal methods
@@ -594,6 +602,9 @@ class PandasDataManager(object):
     # END Column/Row partitions reduce operations
 
     # Map across rows/columns
+    # These operations require some global knowledge of the full column/row
+    # that is being operated on. This means that we have to put all of that
+    # data in the same place.
     def map_across_full_axis(self, axis, func):
         return self.data.map_across_full_axis(axis, func)
 
@@ -614,7 +625,7 @@ class PandasDataManager(object):
         func = self._prepare_method(query_builder, **kwargs)
         new_data = self.map_across_full_axis(1, func)
         # Query removes rows, so we need to update the index
-        new_index = self.compute_index(new_data)
+        new_index = self.compute_index(0, new_data, True)
 
         return cls(new_data, new_index, self.columns)
 
@@ -757,18 +768,10 @@ class PandasDataManager(object):
         cls = type(self)
         axis = 0
 
-        # The need for this stems from the problem that we need to extract the
-        # correct index afterward based on what columns were filtered out. If
-        # we set the Index to be a RangeIndex, we can correctly extract the
-        # Index from the `get_indices` operation.
-        def describe_builder(df, **kwargs):
-            df.columns = pandas.RangeIndex(len(df.columns))
-            return df.describe(**kwargs)
-
-        func = self._prepare_method(describe_builder, **kwargs)
+        func = self._prepare_method(pandas.DataFrame.describe, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        new_index = new_data.get_indices(axis=0, index_func=lambda df: pandas_index_extraction(df, 0))
-        new_columns = self.columns[new_data.get_indices(axis=1, index_func=lambda df: pandas_index_extraction(df, 1), old_blocks=self.data)]
+        new_index = self.compute_index(0, new_data, False)
+        new_columns = self.compute_index(1, new_data, True)
 
         return cls(new_data, new_index, new_columns)
 
@@ -776,14 +779,28 @@ class PandasDataManager(object):
         cls = type(self)
 
         axis = kwargs.get("axis", 0)
+
         func = self._prepare_method(pandas.DataFrame.rank, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        if axis:
-            new_columns = self.columns[new_data.get_indices(axis=1, index_func=lambda df: pandas_index_extraction(df, 1), old_blocks=self.data)]
+
+        # Since we assume no knowledge of internal state, we get the columns
+        # from the internal partitions.
+        if kwargs.get("numeric_only", False):
+            new_columns = self.compute_index(1, new_data, True)
         else:
             new_columns = self.columns
 
         return cls(new_data, self.index, new_columns)
+
+    def diff(self, **kwargs):
+        cls = type(self)
+
+        axis = kwargs.get("axis", 0)
+
+        func = self._prepare_method(pandas.DataFrame.diff, **kwargs)
+        new_data = self.map_across_full_axis(axis, func)
+
+        return cls(new_data, self.index, self.columns)
     # END Map across rows/columns
 
     # Head/Tail/Front/Back
@@ -985,10 +1002,12 @@ class PandasDataManager(object):
         def callable_apply_builder(df, func, axis, index, *args, **kwargs):
             if not axis:
                 df.index = index
+                df.columns = pandas.RangeIndex(len(df.columns))
             else:
                 df.columns = index
+                df.index = pandas.RangeIndex(len(df.index))
 
-            result = df.agg(func, *args, **kwargs)
+            result = df.apply(func, axis=axis, *args, **kwargs)
             return result
 
         index = self.index if not axis else self.columns
@@ -996,12 +1015,16 @@ class PandasDataManager(object):
         func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
         result_data = self.map_across_full_axis(axis, func_prepared)
 
-        if not axis:
-            index = result_data.get_indices(axis, lambda df: pandas_index_extraction(df, axis))
-            columns = result_data.get_indices(axis ^ 1, lambda df: pandas_index_extraction(df, axis ^ 1))
-        else:
-            index = result_data.get_indices(axis ^ 1, lambda df: pandas_index_extraction(df, axis ^ 1))
-            columns = result_data.get_indices(axis, lambda df: pandas_index_extraction(df, axis))
+        # if not axis:
+        try:
+            index = self.compute_index(0, result_data, True)
+        except IndexError:
+            print("ERROR")
+            index = self.compute_index(0, result_data, False)
+        try:
+            columns = self.compute_index(1, result_data, True)
+        except IndexError:
+            columns = self.compute_index(1, result_data, False)
 
         # `apply` and `aggregate` can return a Series or a DataFrame object,
         # and since we need to handle each of those differently, we have to add

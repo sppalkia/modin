@@ -413,7 +413,7 @@ class DataFrame(object):
         old_manager = self._data_manager
         self._data_manager = new_manager
         old_manager.free()
-        self._get_remote_dtypes()
+        # self._get_remote_dtypes()
 
     def add_prefix(self, prefix):
         """Add a prefix to each of the column names.
@@ -889,9 +889,15 @@ class DataFrame(object):
                 raise TypeError("(\"'list' object is not callable\", "
                                 "'occurred at index {0}'".format(
                                     self.index[0]))
-            return DataFrame(data_manager=self._data_manager.apply(func, axis, *args, **kwds))
+            data_manager = self._data_manager.apply(func, axis, *args, **kwds)
+            if isinstance(data_manager, pandas.Series):
+                return data_manager
+            return DataFrame(data_manager=data_manager)
         elif callable(func):
-            return DataFrame(data_manager=self._data_manager.apply(func, axis, *args, **kwds))
+            data_manager = self._data_manager.apply(func, axis, *args, **kwds)
+            if isinstance(data_manager, pandas.Series):
+                return data_manager
+            return DataFrame(data_manager=data_manager)
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(
@@ -1197,19 +1203,7 @@ class DataFrame(object):
         Returns:
             DataFrame with the diff applied
         """
-        axis = pandas.DataFrame()._get_axis_number(axis)
-        partitions = (self._col_partitions
-                      if axis == 0 else self._row_partitions)
-
-        result = _map_partitions(
-            lambda df: df.diff(axis=axis, periods=periods), partitions)
-
-        if (axis == 1):
-            return DataFrame(
-                row_partitions=result, columns=self.columns, index=self.index)
-        if (axis == 0):
-            return DataFrame(
-                col_partitions=result, columns=self.columns, index=self.index)
+        return DataFrame(data_manager=self._data_manager.diff(periods=periods, axis=axis))
 
     def div(self, other, axis='columns', level=None, fill_value=None):
         """Divides this DataFrame against another DataFrame/Series/scalar.
@@ -2766,7 +2760,7 @@ class DataFrame(object):
         Args:
             axis (int): 0 or 'index' for row-wise,
                         1 or 'columns' for column-wise
-            interpolation: {'average', 'min', 'max', 'first', 'dense'}
+            method: {'average', 'min', 'max', 'first', 'dense'}
                 Specifies which method to use for equal vals
             numeric_only (boolean)
                 Include only float, int, boolean data.
