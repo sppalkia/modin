@@ -388,13 +388,13 @@ class PandasDataManager(object):
 
     def max(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         func = self._prepare_method(pandas.DataFrame.max, **kwargs)
         return self.full_reduce(axis, func)
 
     def mean(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
-        axis = kwargs.get("axis", default=0)
+        axis = kwargs.get("axis", 0)
         length = len(self.index) if not axis else len(self.columns)
 
         return self.sum(**kwargs) / length
