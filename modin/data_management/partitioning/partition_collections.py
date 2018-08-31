@@ -318,9 +318,9 @@ class BlockPartitions(object):
             return self.transpose().to_pandas(False).T
         else:
             retrieved_objects = [[obj.to_pandas() for obj in part] for part in self.partitions]
-            print(retrieved_objects[0])
             if all(isinstance(part, pandas.Series) for row in retrieved_objects for part in row):
                 axis = 0
+                retrieved_objects = np.array(retrieved_objects).T
             elif all(isinstance(part, pandas.DataFrame) for row in retrieved_objects for part in row):
                 axis = 1
             else:
@@ -343,7 +343,7 @@ class BlockPartitions(object):
                  for i in range(0, len(df), row_chunksize)]
         return cls(np.array(parts))
 
-    def get_indices(self, axis=0, old_blocks=None):
+    def get_indices(self, axis=0, index_func=None, old_blocks=None):
         """This gets the internal indices stored in the partitions.
 
         Note: These are the global indices of the object. This is mostly useful
@@ -352,14 +352,18 @@ class BlockPartitions(object):
 
         Args:
             axis: This axis to extract the labels. (0 - index, 1 - columns).
+            index_func: The function to be used to extract the function.
             old_blocks: An optional previous object that this object was
                 created from. This is used to compute the correct offsets.
 
         Returns:
             A Pandas Index object.
         """
+        assert callable(index_func), \
+            "Must tell this function how to extract index"
+
         if axis == 0:
-            func = self.preprocess_func(lambda df: df.index)
+            func = self.preprocess_func(index_func)
             # We grab the first column of blocks and extract the indices
             new_indices = [idx.apply(func).get() for idx in self.partitions.T[0]]
             # This is important because sometimes we have resized the data. The new
@@ -370,7 +374,7 @@ class BlockPartitions(object):
             else:
                 cumulative_block_lengths = np.array(self.block_lengths).cumsum()
         else:
-            func = self.preprocess_func(lambda df: df.columns)
+            func = self.preprocess_func(index_func)
             new_indices = [idx.apply(func).get() for idx in self.partitions[0]]
 
             if old_blocks is not None:

@@ -4,6 +4,8 @@ from __future__ import print_function
 
 import numpy as np
 import pandas
+from pandas.compat import string_types
+from pandas.core.dtypes.common import is_list_like
 
 from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
 from .partitioning.remote_partition import RayRemotePartition
@@ -65,7 +67,7 @@ class PandasDataManager(object):
         Returns:
             A new pandas.Index object.
         """
-        new_indices = data_object.get_indices(axis=0, old_blocks=self.data)
+        new_indices = data_object.get_indices(axis=0, index_func=lambda df: pandas_index_extraction(df, 0), old_blocks=self.data)
         return self.index[new_indices]
     # END Index and columns objects
 
@@ -753,12 +755,20 @@ class PandasDataManager(object):
 
     def describe(self, **kwargs):
         cls = type(self)
-
         axis = 0
-        func = self._prepare_method(pandas.DataFrame.describe, **kwargs)
+
+        # The need for this stems from the problem that we need to extract the
+        # correct index afterward based on what columns were filtered out. If
+        # we set the Index to be a RangeIndex, we can correctly extract the
+        # Index from the `get_indices` operation.
+        def describe_builder(df, **kwargs):
+            df.columns = pandas.RangeIndex(len(df.columns))
+            return df.describe(**kwargs)
+
+        func = self._prepare_method(describe_builder, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        new_index = new_data.get_indices(axis=0)
-        new_columns = self.columns[new_data.get_indices(axis=1, old_blocks=self.data)]
+        new_index = new_data.get_indices(axis=0, index_func=lambda df: pandas_index_extraction(df, 0))
+        new_columns = self.columns[new_data.get_indices(axis=1, index_func=lambda df: pandas_index_extraction(df, 1), old_blocks=self.data)]
 
         return cls(new_data, new_index, new_columns)
 
@@ -769,7 +779,7 @@ class PandasDataManager(object):
         func = self._prepare_method(pandas.DataFrame.rank, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
         if axis:
-            new_columns = self.columns[new_data.get_indices(axis=1, old_blocks=self.data)]
+            new_columns = self.columns[new_data.get_indices(axis=1, index_func=lambda df: pandas_index_extraction(df, 1), old_blocks=self.data)]
         else:
             new_columns = self.columns
 
@@ -953,11 +963,21 @@ class PandasDataManager(object):
     # There is a wide range of behaviors that are supported, so a lot of the
     # logic can get a bit convoluted.
     def apply(self, func, axis, *args, **kwargs):
-
         if callable(func):
             return self._callable_func(func, axis, *args, **kwargs)
+        elif is_list_like(func):
+            return self._list_like_func(func, axis, *args, **kwargs)
         else:
             pass
+
+    def _list_like_func(self, func, axis, *args, **kwargs):
+        cls = type(self)
+        func_prepared = self._prepare_method(lambda df: df.apply(func, *args, **kwargs))
+        new_data = self.map_across_full_axis(axis, func_prepared)
+
+        # When the function is list-like, the function names become the index
+        new_index = [f if isinstance(f, string_types) else f.__name__ for f in func]
+        return cls(new_data, new_index, self.columns)
 
     def _callable_func(self, func, axis, *args, **kwargs):
         cls = type(self)
@@ -975,23 +995,21 @@ class PandasDataManager(object):
 
         func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
         result_data = self.map_across_full_axis(axis, func_prepared)
-        return result_data
+
         if not axis:
-            try:
-                index = result_data.get_indices(axis)
-                columns = result_data.get_indices(axis ^ 1)
-            except Exception:
-                series_result = result_data.to_pandas(False)
-                series_result.index = self.columns
-                return series_result
+            index = result_data.get_indices(axis, lambda df: pandas_index_extraction(df, axis))
+            columns = result_data.get_indices(axis ^ 1, lambda df: pandas_index_extraction(df, axis ^ 1))
         else:
-            try:
-                index = result_data.get_indices(axis ^ 1)
-                columns = result_data.get_indices(axis)
-            except Exception:
-                series_result = result_data.to_pandas(False)
-                series_result.index = self.index
-                return series_result
+            index = result_data.get_indices(axis ^ 1, lambda df: pandas_index_extraction(df, axis ^ 1))
+            columns = result_data.get_indices(axis, lambda df: pandas_index_extraction(df, axis))
+
+        # `apply` and `aggregate` can return a Series or a DataFrame object,
+        # and since we need to handle each of those differently, we have to add
+        # this logic here.
+        if len(columns) == 0:
+            series_result = result_data.to_pandas(False)
+            series_result.index = self.columns if not axis else self.index
+            return series_result
 
         return cls(result_data, index, columns)
 
@@ -1002,3 +1020,13 @@ class RayPandasDataManager(PandasDataManager):
     def _from_old_block_partitions(cls, blocks, index, columns):
         blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
         return PandasDataManager(RayBlockPartitions(blocks), index, columns)
+
+
+def pandas_index_extraction(df, axis):
+    if not axis:
+        return df.index
+    else:
+        try:
+            return df.columns
+        except AttributeError:
+            return pandas.Index([])

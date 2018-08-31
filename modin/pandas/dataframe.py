@@ -702,10 +702,8 @@ class DataFrame(object):
             raise NotImplementedError(
                 "To contribute to Pandas on Ray, please visit "
                 "github.com/modin-project/modin.")
-        elif is_list_like(arg):
+        elif is_list_like(arg) or callable(arg):
             return self.apply(arg, axis=_axis, args=args, **kwargs)
-        elif callable(arg):
-            self._callable_function(arg, _axis, *args, **kwargs)
         else:
             # TODO Make pandas error
             raise ValueError("type {} is not callable".format(type(arg)))
@@ -730,106 +728,6 @@ class DataFrame(object):
             raise NotImplementedError("Numpy aggregates not yet supported.")
 
         raise ValueError("{} is an unknown string function".format(func))
-
-    def _callable_function(self, func, axis, *args, **kwargs):
-        kwargs['axis'] = axis
-
-        def agg_helper(df, arg, index, columns, *args, **kwargs):
-            df.index = index
-            df.columns = columns
-            is_transform = kwargs.pop('is_transform', False)
-            new_df = df.agg(arg, *args, **kwargs)
-
-            is_series = False
-            index = None
-            columns = None
-
-            if isinstance(new_df, pandas.Series):
-                is_series = True
-            else:
-                columns = new_df.columns
-                index = new_df.index
-                new_df.columns = pandas.RangeIndex(0, len(new_df.columns))
-                new_df.reset_index(drop=True, inplace=True)
-
-            if is_transform:
-                if is_scalar(new_df) or len(new_df) != len(df):
-                    raise ValueError("transforms cannot produce "
-                                     "aggregated results")
-
-            return is_series, new_df, index, columns
-
-        if axis == 0:
-            index = self.index
-            columns = [
-                self._col_metadata.partition_series(i).index
-                for i in range(len(self._col_partitions))
-            ]
-
-            remote_result = \
-                [_deploy_func._submit(args=(
-                    lambda df: agg_helper(df,
-                                          func,
-                                          index,
-                                          cols,
-                                          *args,
-                                          **kwargs),
-                                      part), num_return_vals=4)
-                 for cols, part in zip(columns, self._col_partitions)]
-
-        if axis == 1:
-            indexes = [
-                self._row_metadata.partition_series(i).index
-                for i in range(len(self._row_partitions))
-            ]
-            columns = self.columns
-
-            remote_result = \
-                [_deploy_func._submit(args=(
-                    lambda df: agg_helper(df,
-                                          func,
-                                          index,
-                                          columns,
-                                          *args,
-                                          **kwargs),
-                                      part), num_return_vals=4)
-                 for index, part in zip(indexes, self._row_partitions)]
-
-        # This magic transposes the list comprehension returned from remote
-        is_series, new_parts, index, columns = \
-            [list(t) for t in zip(*remote_result)]
-
-        # This part is because agg can allow returning a Series or a
-        # DataFrame, and we have to determine which here. Shouldn't add
-        # too much to latency in either case because the booleans can
-        # be returned immediately
-        is_series = ray.get(is_series)
-        if all(is_series):
-            new_series = pandas.concat(ray.get(new_parts), copy=False)
-            new_series.index = self.columns if axis == 0 else self.index
-            return new_series
-        # This error is thrown when some of the partitions return Series and
-        # others return DataFrames. We do not allow mixed returns.
-        elif any(is_series):
-            raise ValueError("no results.")
-        # The remaining logic executes when we have only DataFrames in the
-        # remote objects. We build a Ray DataFrame from the Pandas partitions.
-        elif axis == 0:
-            new_index = ray.get(index[0])
-            # This does not handle the Multi Index case
-            new_columns = ray.get(columns)
-            new_columns = new_columns[0].append(new_columns[1:])
-
-            return DataFrame(
-                col_partitions=new_parts, columns=new_columns, index=new_index)
-        else:
-            new_columns = ray.get(columns[0])
-            # This does not handle the Multi Index case
-            new_index = ray.get(index)
-            new_index = new_index[0].append(new_index[1:])
-
-            return DataFrame(
-                row_partitions=new_parts, columns=new_columns, index=new_index)
 
     def align(self,
               other,
@@ -991,23 +889,9 @@ class DataFrame(object):
                 raise TypeError("(\"'list' object is not callable\", "
                                 "'occurred at index {0}'".format(
                                     self.index[0]))
-            # TODO: some checking on functions that return Series or Dataframe
-            new_cols = _map_partitions(lambda df: df.apply(func),
-                                       self._col_partitions)
-
-            # resolve function names for the DataFrame index
-            new_index = [
-                f_name if isinstance(f_name, string_types) else f_name.__name__
-                for f_name in func
-            ]
-            return DataFrame(
-                col_partitions=new_cols,
-                columns=self.columns,
-                index=new_index,
-                col_metadata=self._col_metadata)
+            return DataFrame(data_manager=self._data_manager.apply(func, axis, *args, **kwds))
         elif callable(func):
-            # return self._callable_function(func, axis=axis, *args, **kwds)
-            return self._data_manager.apply(func, axis, *args, **kwds)
+            return DataFrame(data_manager=self._data_manager.apply(func, axis, *args, **kwds))
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(
