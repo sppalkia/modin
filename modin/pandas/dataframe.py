@@ -1507,8 +1507,8 @@ class DataFrame(object):
                   .format(expecting=expecting, method=method)
             raise ValueError(msg)
 
-        if isinstance(value, (pandas.Series, dict)):
-            raise NotImplementedError("value as a Series or dictionary not yet supported.")
+        if isinstance(value, pandas.Series):
+            raise NotImplementedError("value as a Series not yet supported.")
 
         new_manager = self._data_manager.fillna(value=value, method=method, axis=axis, inplace=False, limit=limit, downcast=downcast, **kwargs)
 

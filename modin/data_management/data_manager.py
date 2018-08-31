@@ -755,10 +755,20 @@ class PandasDataManager(object):
         cls = type(self)
 
         axis = kwargs.get("axis", 0)
-        value = kwargs.get("value", None)
+        value = kwargs.pop("value", None)
 
         if isinstance(value, dict):
-            return
+            if axis == 0:
+                index = self.columns
+            else:
+                index = self.index
+            value = {idx: value[key] for key in value for idx in index.get_indexer_for([key])}
+
+            def fillna_dict_builder(df, func_dict={}):
+                return df.fillna(value=func_dict, **kwargs)
+
+            new_data = self.data.apply_func_to_select_indices(axis, fillna_dict_builder, value)
+            return cls(new_data, self.index, self.columns)
         else:
             func = self._prepare_method(pandas.DataFrame.fillna, **kwargs)
             new_data = self.map_across_full_axis(axis, func)
@@ -982,10 +992,15 @@ class PandasDataManager(object):
     def apply(self, func, axis, *args, **kwargs):
         if callable(func):
             return self._callable_func(func, axis, *args, **kwargs)
+        elif isinstance(func, dict):
+            return self._dict_func(func, axis, *args, **kwargs)
         elif is_list_like(func):
             return self._list_like_func(func, axis, *args, **kwargs)
         else:
             pass
+
+    def _dict_func(self, func):
+        cls = type(self)
 
     def _list_like_func(self, func, axis, *args, **kwargs):
         cls = type(self)
@@ -1019,7 +1034,6 @@ class PandasDataManager(object):
         try:
             index = self.compute_index(0, result_data, True)
         except IndexError:
-            print("ERROR")
             index = self.compute_index(0, result_data, False)
         try:
             columns = self.compute_index(1, result_data, True)
