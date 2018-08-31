@@ -63,6 +63,7 @@ def test_int_dataframe():
 
     filter_by = {'items': ['col1', 'col5'], 'regex': '4$|3$', 'like': 'col'}
 
+    test_sample(ray_df, pandas_df)
     test_filter(ray_df, pandas_df, filter_by)
     test_index(ray_df, pandas_df)
     test_size(ray_df, pandas_df)
@@ -233,6 +234,7 @@ def test_float_dataframe():
 
     filter_by = {'items': ['col1', 'col5'], 'regex': '4$|3$', 'like': 'col'}
 
+    test_sample(ray_df, pandas_df)
     test_filter(ray_df, pandas_df, filter_by)
     test_index(ray_df, pandas_df)
     test_size(ray_df, pandas_df)
@@ -402,6 +404,7 @@ def test_mixed_dtype_dataframe():
 
     filter_by = {'items': ['col1', 'col5'], 'regex': '4$|3$', 'like': 'col'}
 
+    test_sample(ray_df, pandas_df)
     test_filter(ray_df, pandas_df, filter_by)
     test_index(ray_df, pandas_df)
     test_size(ray_df, pandas_df)
@@ -569,6 +572,7 @@ def test_nan_dataframe():
 
     filter_by = {'items': ['col1', 'col5'], 'regex': '4$|3$', 'like': 'col'}
 
+    test_sample(ray_df, pandas_df)
     test_filter(ray_df, pandas_df, filter_by)
     test_index(ray_df, pandas_df)
     test_size(ray_df, pandas_df)
@@ -1529,6 +1533,18 @@ def test_eval_df_use_case():
     frame_data = {'a': np.random.randn(10), 'b': np.random.randn(10)}
     df = pandas.DataFrame(frame_data)
     ray_df = pd.DataFrame(frame_data)
+
+    # Very hacky test to test eval while inplace is not working
+    tmp_pandas = df.eval(
+        "e = arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    tmp_ray = ray_df.eval(
+        "e = arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
+
     df.eval(
         "e = arctan2(sin(a), b)",
         engine='python',
@@ -1553,6 +1569,24 @@ def test_eval_df_arithmetic_subexpression():
         "not_e = sin(a + b)", engine='python', parser='pandas', inplace=True)
     # TODO: Use a series equality validator.
     assert ray_df_equals_pandas(ray_df, df)
+
+
+def test_eval_df_series_result():
+    frame_data = {'a': np.random.randn(10), 'b': np.random.randn(10)}
+    df = pandas.DataFrame(frame_data)
+    ray_df = pd.DataFrame(frame_data)
+
+    # Very hacky test to test eval while inplace is not working
+    tmp_pandas = df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    tmp_ray = ray_df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
+    assert isinstance(to_pandas(tmp_ray), pandas.Series)
 
 
 def test_ewm():
@@ -2865,10 +2899,19 @@ def test_rtruediv():
     test_inter_df_math_right_ops("rtruediv")
 
 
-def test_sample():
-    ray_df = create_test_dataframe()
-    assert len(ray_df.sample(n=4)) == 4
-    assert len(ray_df.sample(frac=0.5)) == 2
+@pytest.fixture
+def test_sample(ray_df, pd_df):
+    with pytest.raises(ValueError):
+        ray_df.sample(n=3, frac=0.4)
+
+    assert ray_df_equals_pandas(
+            ray_df.sample(frac=0.5, random_state=42),
+            pd_df.sample(frac=0.5, random_state=42)
+            )
+    assert ray_df_equals_pandas(
+            ray_df.sample(n=2, random_state=42),
+            pd_df.sample(n=2, random_state=42)
+            )
 
 
 def test_select():
