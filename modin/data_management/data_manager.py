@@ -599,7 +599,7 @@ class PandasDataManager(object):
         cls = type(self)
         columns = self.columns
 
-        def query_builder(df):
+        def query_builder(df, **kwargs):
             # This is required because of an Arrow limitation
             # TODO revisit for Arrow error
             df = df.copy()
@@ -615,6 +615,33 @@ class PandasDataManager(object):
         new_index = self.compute_index(new_data)
 
         return cls(new_data, new_index, self.columns)
+
+    def eval(self, expr, **kwargs):
+        cls = type(self)
+        columns = self.columns
+
+        def eval_builder(df, **kwargs):
+            df.columns = columns
+            result = df.eval(expr, inplace=False, **kwargs)
+            # If result is a series, expr was not an assignment expression.
+            if not isinstance(result, pandas.Series):
+                result.columns = pandas.RangeIndex(0, len(result.columns))
+            return result
+
+        func = self._prepare_method(eval_builder, **kwargs)
+        new_data = self.map_across_full_axis(1, func)
+
+        # eval can update the columns, so we must update columns
+        columns_copy = pandas.DataFrame(columns=columns)
+        columns_copy = columns_copy.eval(expr, inplace=False, **kwargs)
+        if isinstance(columns_copy, pandas.Series):
+            # To create a data manager, we need the 
+            # columns to be in a list-like
+            columns = list(columns_copy.name)
+        else:
+            columns = columns_copy.columns
+
+        return cls(new_data, self.index, columns)
 
     def quantile_for_list_of_values(self, **kwargs):
         cls = type(self)
