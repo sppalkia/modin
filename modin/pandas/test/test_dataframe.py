@@ -1533,6 +1533,18 @@ def test_eval_df_use_case():
     frame_data = {'a': np.random.randn(10), 'b': np.random.randn(10)}
     df = pandas.DataFrame(frame_data)
     ray_df = pd.DataFrame(frame_data)
+
+    # Very hacky test to test eval while inplace is not working
+    tmp_pandas = df.eval(
+        "e = arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    tmp_ray = ray_df.eval(
+        "e = arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
+
     df.eval(
         "e = arctan2(sin(a), b)",
         engine='python',
@@ -1557,6 +1569,24 @@ def test_eval_df_arithmetic_subexpression():
         "not_e = sin(a + b)", engine='python', parser='pandas', inplace=True)
     # TODO: Use a series equality validator.
     assert ray_df_equals_pandas(ray_df, df)
+
+
+def test_eval_df_series_result():
+    frame_data = {'a': np.random.randn(10), 'b': np.random.randn(10)}
+    df = pandas.DataFrame(frame_data)
+    ray_df = pd.DataFrame(frame_data)
+
+    # Very hacky test to test eval while inplace is not working
+    tmp_pandas = df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    tmp_ray = ray_df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
+    assert isinstance(to_pandas(tmp_ray), pandas.Series)
 
 
 def test_ewm():
