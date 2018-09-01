@@ -2326,11 +2326,11 @@ class DataFrame(object):
         def remote_func(df):
             return df.memory_usage(index=False, deep=deep)
 
-        result = self._map_reduce(axis=0, map_func=remote_func)
+        result = self._data_manager.full_reduce(axis=0, map_func=remote_func)
 
         result.index = self.columns
         if index:
-            index_value = self._row_metadata.index.memory_usage(deep=deep)
+            index_value = self.index.memory_usage(deep=deep)
             return pandas.Series(index_value, index=['Index']).append(result)
 
         return result

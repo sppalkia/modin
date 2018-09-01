@@ -2279,8 +2279,9 @@ def test_melt():
         ray_df.melt()
 
 
-@pytest.fixture
-def test_memory_usage(ray_df):
+#@pytest.fixture
+def test_memory_usage():
+    ray_df = create_test_dataframe()
     assert type(ray_df.memory_usage()) is pandas.core.series.Series
     assert ray_df.memory_usage(index=True).at['Index'] is not None
     assert ray_df.memory_usage(deep=True).sum() >= \
