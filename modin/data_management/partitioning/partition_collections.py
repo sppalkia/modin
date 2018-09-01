@@ -516,6 +516,10 @@ class BlockPartitions(object):
         """
         cls = type(self)
 
+        # Handling dictionaries has to be done differently, but we still want
+        # to figure out the partitions that need to be applied to, so we will
+        # store the dictionary in a separate variable and assign `indices` to
+        # the keys to handle it the same as we normally would.
         if isinstance(indices, dict):
             dict_indices = indices
             indices = list(indices.keys())
@@ -537,7 +541,10 @@ class BlockPartitions(object):
         # possible here. Functions that use this in the dictionary format must
         # accept a keyword argument `func_dict`.
         if dict_indices is not None:
-            result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
+            if not keep_remaining:
+                result = np.array([self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in partitions_dict])
+            else:
+                result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
         else:
             if not keep_remaining:
                 # We are passing internal indices in here. In order for func to
@@ -574,6 +581,11 @@ class BlockPartitions(object):
             A new BlockPartitions object, the type of object that called this.
         """
         cls = type(self)
+        if isinstance(indices, dict):
+            dict_indices = indices
+            indices = list(indices.keys())
+        else:
+            dict_indices = None
 
         if not isinstance(indices, list):
             indices = [indices]
@@ -591,12 +603,22 @@ class BlockPartitions(object):
             partitions_for_apply = self.row_partitions
             partitions_for_remaining = self.partitions
 
-        if not keep_remaining:
-            # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in partitions_dict])
+        # We may have a command to perform different functions on different
+        # columns at the same time. We attempt to handle this as efficiently as
+        # possible here. Functions that use this in the dictionary format must
+        # accept a keyword argument `func_dict`.
+        if dict_indices is not None:
+            if not keep_remaining:
+                result = np.array([partitions_for_apply[i].apply(preprocessed_func, func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in partitions_dict])
+            else:
+                result = np.array([partitions_for_remaining[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(preprocessed_func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
         else:
-            # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
+            if not keep_remaining:
+                # See notes in `apply_func_to_select_indices`
+                result = np.array([partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in partitions_dict])
+            else:
+                # See notes in `apply_func_to_select_indices`
+                result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
 
         return cls(result.T) if not axis else cls(result)
 

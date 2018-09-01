@@ -767,7 +767,7 @@ class PandasDataManager(object):
             def fillna_dict_builder(df, func_dict={}):
                 return df.fillna(value=func_dict, **kwargs)
 
-            new_data = self.data.apply_func_to_select_indices(axis, fillna_dict_builder, value)
+            new_data = self.data.apply_func_to_select_indices(axis, fillna_dict_builder, value, keep_remaining=True)
             return cls(new_data, self.index, self.columns)
         else:
             func = self._prepare_method(pandas.DataFrame.fillna, **kwargs)
@@ -999,8 +999,52 @@ class PandasDataManager(object):
         else:
             pass
 
-    def _dict_func(self, func):
+    def _post_process_apply(self, result_data, axis):
         cls = type(self)
+        try:
+            index = self.compute_index(0, result_data, True)
+        except IndexError:
+            index = self.compute_index(0, result_data, False)
+        try:
+            columns = self.compute_index(1, result_data, True)
+        except IndexError:
+            columns = self.compute_index(1, result_data, False)
+
+        # `apply` and `aggregate` can return a Series or a DataFrame object,
+        # and since we need to handle each of those differently, we have to add
+        # this logic here.
+        if len(columns) == 0:
+            series_result = result_data.to_pandas(False)
+            series_result.index = index
+            return series_result
+
+        return cls(result_data, index, columns)
+
+    def _dict_func(self, func, axis, *args, **kwargs):
+        if "axis" not in kwargs:
+            kwargs["axis"] = axis
+
+        if axis == 0:
+            index = self.columns
+        else:
+            index = self.index
+
+        func = {idx: func[key] for key in func for idx in index.get_indexer_for([key])}
+
+        def dict_apply_builder(df, func_dict={}):
+            return df.apply(func_dict, *args, **kwargs)
+
+        result_data = self.data.apply_func_to_select_indices_along_full_axis(axis, dict_apply_builder, func, keep_remaining=False)
+
+        full_result = self._post_process_apply(result_data, axis)
+
+        # The columns can get weird because we did not broadcast them to the
+        # partitions and we do not have any guarantee that they are correct
+        # until here. Fortunately, the keys of the function will tell us what
+        # the columns are.
+        if isinstance(full_result, pandas.Series):
+            full_result.index = [self.columns[idx] for idx in func]
+        return full_result
 
     def _list_like_func(self, func, axis, *args, **kwargs):
         cls = type(self)
@@ -1012,7 +1056,6 @@ class PandasDataManager(object):
         return cls(new_data, new_index, self.columns)
 
     def _callable_func(self, func, axis, *args, **kwargs):
-        cls = type(self)
 
         def callable_apply_builder(df, func, axis, index, *args, **kwargs):
             if not axis:
@@ -1030,25 +1073,7 @@ class PandasDataManager(object):
         func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
         result_data = self.map_across_full_axis(axis, func_prepared)
 
-        # if not axis:
-        try:
-            index = self.compute_index(0, result_data, True)
-        except IndexError:
-            index = self.compute_index(0, result_data, False)
-        try:
-            columns = self.compute_index(1, result_data, True)
-        except IndexError:
-            columns = self.compute_index(1, result_data, False)
-
-        # `apply` and `aggregate` can return a Series or a DataFrame object,
-        # and since we need to handle each of those differently, we have to add
-        # this logic here.
-        if len(columns) == 0:
-            series_result = result_data.to_pandas(False)
-            series_result.index = self.columns if not axis else self.index
-            return series_result
-
-        return cls(result_data, index, columns)
+        return self._post_process_apply(result_data, axis)
 
 
 class RayPandasDataManager(PandasDataManager):

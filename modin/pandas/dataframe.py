@@ -861,43 +861,18 @@ class DataFrame(object):
                     'duplicate column names not supported with apply().',
                     FutureWarning,
                     stacklevel=2)
-            has_list = list in map(type, func.values())
-            part_ind_tuples = [(self._col_metadata[key], key) for key in func]
-
-            if has_list:
-                # if input dict has a list, the function to apply must wrap
-                # single functions in lists as well to get the desired output
-                # format
-                result = [_deploy_func.remote(
-                    lambda df: df.iloc[:, ind].apply(
-                        func[key] if is_list_like(func[key])
-                        else [func[key]]),
-                    self._col_partitions[part])
-                    for (part, ind), key in part_ind_tuples]
-                return pandas.concat(ray.get(result), axis=1, copy=False)
-            else:
-                result = [
-                    _deploy_func.remote(
-                        lambda df: df.iloc[:, ind].apply(func[key]),
-                        self._col_partitions[part])
-                    for (part, ind), key in part_ind_tuples
-                ]
-                return pandas.Series(ray.get(result), index=func.keys())
-
         elif is_list_like(func):
             if axis == 1:
                 raise TypeError("(\"'list' object is not callable\", "
                                 "'occurred at index {0}'".format(
                                     self.index[0]))
-            data_manager = self._data_manager.apply(func, axis, *args, **kwds)
-            if isinstance(data_manager, pandas.Series):
-                return data_manager
-            return DataFrame(data_manager=data_manager)
-        elif callable(func):
-            data_manager = self._data_manager.apply(func, axis, *args, **kwds)
-            if isinstance(data_manager, pandas.Series):
-                return data_manager
-            return DataFrame(data_manager=data_manager)
+        elif not callable(func):
+            return
+
+        data_manager = self._data_manager.apply(func, axis, *args, **kwds)
+        if isinstance(data_manager, pandas.Series):
+            return data_manager
+        return DataFrame(data_manager=data_manager)
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(
