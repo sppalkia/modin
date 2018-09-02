@@ -1968,7 +1968,7 @@ class DataFrame(object):
             if memory_usage:
                 result['memory'] = df.memory_usage(index=False, deep=memory_usage_deep)
             if null_counts:
-                result['count'] = df.count()
+                result['count'] = df.count(axis=0)
             return result
         helper_result = self._data_manager.full_reduce(axis=0, map_func=info_helper)
 
