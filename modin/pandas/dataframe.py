@@ -1962,12 +1962,22 @@ class DataFrame(object):
         # Create the Index info() string by parsing self.index
         index_string = index.summary() + '\n'
 
-        if actually_verbose:
+        # Package everything into one helper
+        def info_helper(df):
+            result = pandas.DataFrame()
+            if memory_usage:
+                result['memory'] = df.memory_usage(index=False, deep=memory_usage_deep)
             if null_counts:
-                counts = self.count()
+                result['count'] = df.count()
+            return result
+        helper_result = self._data_manager.full_reduce(axis=0, map_func=info_helper)
+
+        if actually_verbose:
             # Create string for verbose output
             col_string = 'Data columns (total {0} columns):\n' \
                 .format(len(columns))
+            if null_counts:
+                counts = helper_result['count']
             for col, dtype in zip(columns, dtypes):
                 col_string += '{0}\t'.format(col)
                 if null_counts:
@@ -1987,7 +1997,7 @@ class DataFrame(object):
         # Create memory usage string
         memory_string = ''
         if memory_usage:
-            mem_data = self.memory_usage(deep=memory_usage_deep)
+            mem_data = helper_result['memory']
             if memory_usage_deep:
                 memory_string = 'memory usage: {0} bytes'.format(mem_data.sum())
             else:
