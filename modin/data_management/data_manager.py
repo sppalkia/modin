@@ -285,12 +285,83 @@ class PandasDataManager(object):
         new_data = reindexed_self.inter_data_operation(1, lambda l, r: inter_data_op_builder(l, r, self_cols, other_cols, func), reindexed_other)
 
         return cls(new_data, joined_index, new_columns)
+
+    def _inter_df_op_handler(self, func, other, **kwargs):
+        """Helper method for inter-DataFrame and scalar operations"""
+        axis = kwargs.get("axis", 0)
+
+        if isinstance(other, type(self)):
+            return self.inter_manager_operations(other, "outer",
+                lambda x, y: func(x, y, **kwargs))
+        else:
+            return self.scalar_operations(axis, other,
+                lambda df: func(df, other, **kwargs))
+
+    def add(self, other, **kwargs):
+        #TODO: need to write a prepare_function for inter_df operations
+        func = pandas.DataFrame.add
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def div(self, other, **kwargs):
+        func = pandas.DataFrame.div
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def eq(self, other, **kwargs):
+        func = pandas.DataFrame.eq
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def floordiv(self, other, **kwargs):
+        func = pandas.DataFrame.floordiv
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def ge(self, other, **kwargs):
+        func = pandas.DataFrame.ge
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def gt(self, other, **kwargs):
+        func = pandas.DataFrame.gt
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def le(self, other, **kwargs):
+        func = pandas.DataFrame.le
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def lt(self, other, **kwargs):
+        func = pandas.DataFrame.lt
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def mod(self, other, **kwargs):
+        func = pandas.DataFrame.mod
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def mul(self, other, **kwargs):
+        func = pandas.DataFrame.mul
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def ne(self, other, **kwargs):
+        func = pandas.DataFrame.ne
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def pow(self, other, **kwargs):
+        func = pandas.DataFrame.pow
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def sub(self, other, **kwargs):
+        func = pandas.DataFrame.sub
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def truediv(self, other, **kwargs):
+        func = pandas.DataFrame.truediv
+        return self._inter_df_op_handler(func, other, **kwargs)
+
     # END Inter-Data operations
 
     # Single Manager scalar operations (e.g. add to scalar, list of scalars)
     def scalar_operations(self, axis, scalar, func):
         if isinstance(scalar, list):
-            return self.map_across_full_axis(axis, func)
+            cls = type(self)
+            new_data = self.map_across_full_axis(axis, func)
+            return cls(new_data, self.index, self.columns)
         else:
             return self.map_partitions(func)
     # END Single Manager scalar operations
