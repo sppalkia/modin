@@ -1964,24 +1964,28 @@ class DataFrame(object):
 
         # Package everything into one helper
         def info_helper(df):
-            result = pandas.DataFrame()
+            result = pandas.Series()
             if memory_usage:
-                result['memory'] = df.memory_usage(index=False, deep=memory_usage_deep)
+                memory = df.memory_usage(index=False, deep=memory_usage_deep)
+                memory = memory.add_suffix("_memory")
+                result = result.append(memory)
             if null_counts:
-                result['count'] = df.count(axis=0)
+                count = df.count(axis=0)
+                count = count.add_suffix("_count")
+                result = result.append(count)
             return result
         helper_result = self._data_manager.full_reduce(axis=0, map_func=info_helper)
+        counts = helper_result.filter(regex='_count', axis=0)
+        mem_data = helper_result.filter(regex='_memory', axis=0)
 
         if actually_verbose:
             # Create string for verbose output
             col_string = 'Data columns (total {0} columns):\n' \
                 .format(len(columns))
-            if null_counts:
-                counts = helper_result['count']
             for col, dtype in zip(columns, dtypes):
                 col_string += '{0}\t'.format(col)
                 if null_counts:
-                    col_string += '{0} not-null '.format(counts[col])
+                    col_string += '{0} not-null '.format(counts[col+"_count"])
                 col_string += '{0}\n'.format(dtype)
         else:
             # Create string for not verbose output
@@ -1997,7 +2001,6 @@ class DataFrame(object):
         # Create memory usage string
         memory_string = ''
         if memory_usage:
-            mem_data = helper_result['memory']
             if memory_usage_deep:
                 memory_string = 'memory usage: {0} bytes'.format(mem_data.sum())
             else:
