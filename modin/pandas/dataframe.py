@@ -1962,26 +1962,31 @@ class DataFrame(object):
         # Create the Index info() string by parsing self.index
         index_string = index.summary() + '\n'
 
-        # Package everything into one helper
-        def info_helper(df):
-            result = pandas.DataFrame()
-            if memory_usage:
-                result['memory'] = df.memory_usage(index=False, deep=memory_usage_deep)
+        if memory_usage or null_counts:
+            results_data = self._data_manager.info(
+                    verbose=actually_verbose,
+                    buf=buf,
+                    max_cols=max_cols,
+                    memory_usage=memory_usage,
+                    null_counts=null_counts
+                    )
             if null_counts:
-                result['count'] = df.count(axis=0)
-            return result
-        helper_result = self._data_manager.full_reduce(axis=0, map_func=info_helper)
+                # For some reason, the counts table has a shape of (columns, columns)
+                counts = results_data['count']
+                counts.columns = columns
+            if memory_usage:
+                # For some reason, the memory table has a shape of (columns, columns)
+                # but it doesn't matter because the cells not on the diagonal are NaN
+                memory_usage_data = results_data['memory'].sum() + index.memory_usage(deep=memory_usage_deep)
 
         if actually_verbose:
             # Create string for verbose output
             col_string = 'Data columns (total {0} columns):\n' \
                 .format(len(columns))
-            if null_counts:
-                counts = helper_result['count']
             for col, dtype in zip(columns, dtypes):
                 col_string += '{0}\t'.format(col)
                 if null_counts:
-                    col_string += '{0} not-null '.format(counts[col])
+                    col_string += '{0} not-null '.format(counts.loc[col, col])
                 col_string += '{0}\n'.format(dtype)
         else:
             # Create string for not verbose output
@@ -1997,11 +2002,10 @@ class DataFrame(object):
         # Create memory usage string
         memory_string = ''
         if memory_usage:
-            mem_data = helper_result['memory']
             if memory_usage_deep:
-                memory_string = 'memory usage: {0} bytes'.format(mem_data.sum())
+                memory_string = 'memory usage: {0} bytes'.format(memory_usage_data)
             else:
-                memory_string = 'memory usage: {0}+ bytes'.format(mem_data.sum())
+                memory_string = 'memory usage: {0}+ bytes'.format(memory_usage_data)
 
         # Combine all the components of the info() output
         result = ''.join([
@@ -2358,10 +2362,20 @@ class DataFrame(object):
             "github.com/modin-project/modin.")
 
     def memory_usage(self, index=True, deep=False):
-        def remote_func(df):
-            return df.memory_usage(index=False, deep=deep)
+        """Returns the memory usage of each column in bytes
 
-        result = self._data_manager.full_reduce(axis=0, map_func=remote_func)
+        Args:
+            index (bool): Whether to include the memory usage of the DataFrame's
+                index in returned Series. Defaults to True
+            deep (bool): If True, introspect the data deeply by interrogating 
+            objects dtypes for system-level memory consumption. Defaults to False
+
+        Returns:
+            A Series where the index are the column names and the values are
+            the memory usage of each of the columns in bytes. If `index=true`,
+            then the first value of the Series will be 'Index' with its memory usage.
+        """
+        result = self._data_manager.memory_usage(index=index, deep=deep)
 
         result.index = self.columns
         if index:
