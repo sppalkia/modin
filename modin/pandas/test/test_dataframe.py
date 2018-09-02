@@ -2094,18 +2094,24 @@ def test_infer_objects():
 
 #@pytest.fixture
 def test_info():
-    ray_df = create_test_dataframe()
+    ray_df = pd.DataFrame({
+        'col1': [1, 2, 3, np.nan],
+        'col2': [4, 5, np.nan, 7],
+        'col3': [8, np.nan, 10, 11],
+        'col4': [np.nan, 13, 14, 15]
+    })
+    ray_df.info(memory_usage='deep')
     with io.StringIO() as buf:
         ray_df.info(buf=buf)
         info_string = buf.getvalue()
         assert '<class \'modin.pandas.dataframe.DataFrame\'>\n' in info_string
         assert 'memory usage: ' in info_string
-        assert 'Data columns (total 5 columns):' in info_string
+        assert 'Data columns (total 4 columns):' in info_string
     with io.StringIO() as buf:
         ray_df.info(buf=buf, verbose=False, memory_usage=False)
         info_string = buf.getvalue()
         assert 'memory usage: ' not in info_string
-        assert 'Columns: 5 entries, col1 to col5' in info_string
+        assert 'Columns: 4 entries, col1 to col4' in info_string
 
 
 @pytest.fixture
