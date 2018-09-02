@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import pytest
+import io
 import numpy as np
 import pandas
 import pandas.util.testing as tm
@@ -2091,12 +2092,20 @@ def test_infer_objects():
         ray_df.infer_objects()
 
 
-@pytest.fixture
-def test_info(ray_df):
-    info_string = ray_df.info()
-    assert '<class \'modin.pandas.dataframe.DataFrame\'>\n' in info_string
-    info_string = ray_df.info(memory_usage=True)
-    assert 'memory_usage: ' in info_string
+#@pytest.fixture
+def test_info():
+    ray_df = create_test_dataframe()
+    with io.StringIO() as buf:
+        ray_df.info(buf=buf)
+        info_string = buf.getvalue()
+        assert '<class \'modin.pandas.dataframe.DataFrame\'>\n' in info_string
+        assert 'memory usage: ' in info_string
+        assert 'Data columns (total 5 columns):' in info_string
+    with io.StringIO() as buf:
+        ray_df.info(buf=buf, verbose=False, memory_usage=False)
+        info_string = buf.getvalue()
+        assert 'memory usage: ' not in info_string
+        assert 'Columns: 5 entries, col1 to col5' in info_string
 
 
 @pytest.fixture
