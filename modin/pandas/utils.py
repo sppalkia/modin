@@ -236,9 +236,7 @@ def from_pandas(df):
     """Converts a pandas DataFrame to a Ray DataFrame.
     Args:
         df (pandas.DataFrame): The pandas DataFrame to convert.
-        num_partitions (int): The number of partitions to split the DataFrame
-            into. Has priority over chunksize.
-        chunksize (int): The number of rows to put in each partition.
+
     Returns:
         A new Ray DataFrame object.
     """
@@ -255,10 +253,6 @@ def to_pandas(df):
         A new pandas DataFrame.
     """
     return df._data_manager.to_pandas()
-    # pandas_df = pandas.concat(ray.get(df._row_partitions), copy=False)
-    # pandas_df.index = df.index
-    # pandas_df.columns = df.columns
-    # return pandas_df
 
 
 """

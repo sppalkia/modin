@@ -249,7 +249,7 @@ class PandasDataManager(object):
         new_columns = self_proxy.join(others_proxy, lsuffix=lsuffix, rsuffix=rsuffix).columns
 
         return cls(new_data, joined_index, new_columns)
-    # END Append/Concat/Join (Not Merge)
+    # END Append/Concat/Join
 
     # Inter-Data operations (e.g. add, sub)
     # These operations require two DataFrames and will change the shape of the
@@ -291,11 +291,48 @@ class PandasDataManager(object):
         axis = kwargs.get("axis", 0)
 
         if isinstance(other, type(self)):
-            return self.inter_manager_operations(other, "outer",
-                lambda x, y: func(x, y, **kwargs))
+            return self.inter_manager_operations(other, "outer", lambda x, y: func(x, y, **kwargs))
         else:
-            return self.scalar_operations(axis, other,
-                lambda df: func(df, other, **kwargs))
+            return self.scalar_operations(axis, other, lambda df: func(df, other, **kwargs))
+
+    def where(self, cond, other, **kwargs):
+        cls = type(self)
+
+        assert isinstance(cond, type(self)), \
+            "Must have the same DataManager subclass to perform this operation"
+
+        if isinstance(other, type(self)):
+            # Note: Currently we are doing this with two maps across the entire
+            # data. This can be done with a single map, but it will take a
+            # modification in the `BlockPartition` class.
+            # If this were in one pass it would be ~2x faster.
+            # TODO rewrite this to take one pass.
+            def where_builder_first_pass(cond, other, **kwargs):
+                return cond.where(cond, other, **kwargs)
+
+            def where_builder_second_pass(df, new_other, **kwargs):
+                return df.where(new_other == True, new_other, **kwargs)
+
+            # We are required to perform this reindexing on everything to
+            # shuffle the data together
+            reindexed_cond = cond.reindex(0, self.index).data
+            reindexed_other = other.reindex(0, self.index).data
+            reindexed_self = self.reindex(0, self.index).data
+
+            first_pass = reindexed_cond.inter_data_operation(1, lambda l, r: where_builder_first_pass(l, r, **kwargs), reindexed_other)
+            final_pass = reindexed_self.inter_data_operation(1, lambda l, r: where_builder_second_pass(l, r, **kwargs), first_pass)
+            return cls(final_pass, self.index, self.columns)
+        else:
+            axis = kwargs.get("axis", 0)
+
+            def where_builder_series(df, cond, other, **kwargs):
+                return df.where(cond, other, **kwargs)
+
+            reindexed_self = self.reindex(axis, self.index if not axis else self.columns).data
+            print(reindexed_self.to_pandas(False))
+            reindexed_cond = cond.reindex(axis, self.index if not axis else self.columns).data
+            new_data = reindexed_self.inter_data_operation(axis, lambda l, r: where_builder_series(l, r, other, **kwargs), reindexed_cond)
+            return cls(new_data, self.index, self.columns)
 
     def add(self, other, **kwargs):
         #TODO: need to write a prepare_function for inter_df operations

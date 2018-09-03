@@ -356,16 +356,17 @@ class DataFrame(object):
         Returns:
             The dtypes for this DataFrame.
         """
-        assert self._dtypes_cache is not None
-
-        if isinstance(self._dtypes_cache, list) and \
-                isinstance(self._dtypes_cache[0],
-                           ray.ObjectID):
-            self._dtypes_cache = pandas.concat(
-                ray.get(self._dtypes_cache), copy=False)
-            self._dtypes_cache.index = self.columns
-
-        return self._dtypes_cache
+        return []
+        # assert self._dtypes_cache is not None
+        #
+        # if isinstance(self._dtypes_cache, list) and \
+        #         isinstance(self._dtypes_cache[0],
+        #                    ray.ObjectID):
+        #     self._dtypes_cache = pandas.concat(
+        #         ray.get(self._dtypes_cache), copy=False)
+        #     self._dtypes_cache.index = self.columns
+        #
+        # return self._dtypes_cache
 
     @property
     def empty(self):
@@ -4322,68 +4323,67 @@ class DataFrame(object):
                                  "self")
             cond = DataFrame(cond, index=self.index, columns=self.columns)
 
-        zipped_partitions = self._copartition(cond, self.index)
-        args = (False, axis, level, errors, try_cast, raise_on_error)
-
         if isinstance(other, DataFrame):
-            other_zipped = (v for k, v in self._copartition(other, self.index))
+            other = other._data_manager
 
-            new_partitions = [
-                _where_helper.remote(k, v, next(other_zipped), self.columns,
-                                     cond.columns, other.columns, *args)
-                for k, v in zipped_partitions
-            ]
+        elif isinstance(other, pandas.Series):
+            other = other.reindex(self.index if not axis else self.columns)
 
+        else:
+            index = self.index if not axis else self.columns
+            other = pandas.Series(other, index=index)
+
+        return DataFrame(data_manager=self._data_manager.where(cond._data_manager, other, axis=axis, level=level))
         # Series has to be treated specially because we're operating on row
         # partitions from here on.
-        elif isinstance(other, pandas.Series):
-            if axis == 0:
-                # Pandas determines which index to use based on axis.
-                other = other.reindex(self.index)
-                other.index = pandas.RangeIndex(len(other))
-
-                # Since we're working on row partitions, we have to partition
-                # the Series based on the partitioning of self (since both
-                # self and cond are co-partitioned by self.
-                other_builder = []
-                for length in self._row_metadata._lengths:
-                    other_builder.append(other[:length])
-                    other = other[length:]
-                    # Resetting the index here ensures that we apply each part
-                    # to the correct row within the partitions.
-                    other.index = pandas.RangeIndex(len(other))
-
-                other = (obj for obj in other_builder)
-
-                new_partitions = [
-                    _where_helper.remote(k, v, next(other, pandas.Series()),
-                                         self.columns, cond.columns, None,
-                                         *args) for k, v in zipped_partitions
-                ]
-            else:
-                other = other.reindex(self.columns)
-                new_partitions = [
-                    _where_helper.remote(k, v, other, self.columns,
-                                         cond.columns, None, *args)
-                    for k, v in zipped_partitions
-                ]
-
-        else:
-            new_partitions = [
-                _where_helper.remote(k, v, other, self.columns, cond.columns,
-                                     None, *args) for k, v in zipped_partitions
-            ]
-
-        if inplace:
-            self._update_inplace(
-                row_partitions=new_partitions,
-                row_metadata=self._row_metadata,
-                col_metadata=self._col_metadata)
-        else:
-            return DataFrame(
-                row_partitions=new_partitions,
-                row_metadata=self._row_metadata,
-                col_metadata=self._col_metadata)
+        # elif isinstance(other, pandas.Series):
+        #     if axis == 0:
+        #         # Pandas determines which index to use based on axis.
+        #         other = other.reindex(self.index)
+        #         other.index = pandas.RangeIndex(len(other))
+        #
+        #         # Since we're working on row partitions, we have to partition
+        #         # the Series based on the partitioning of self (since both
+        #         # self and cond are co-partitioned by self.
+        #         other_builder = []
+        #         for length in self._row_metadata._lengths:
+        #             other_builder.append(other[:length])
+        #             other = other[length:]
+        #             # Resetting the index here ensures that we apply each part
+        #             # to the correct row within the partitions.
+        #             other.index = pandas.RangeIndex(len(other))
+        #
+        #         other = (obj for obj in other_builder)
+        #
+        #         new_partitions = [
+        #             _where_helper.remote(k, v, next(other, pandas.Series()),
+        #                                  self.columns, cond.columns, None,
+        #                                  *args) for k, v in zipped_partitions
+        #         ]
+        #     else:
+        #         other = other.reindex(self.columns)
+        #         new_partitions = [
+        #             _where_helper.remote(k, v, other, self.columns,
+        #                                  cond.columns, None, *args)
+        #             for k, v in zipped_partitions
+        #         ]
+        #
+        # else:
+        #     new_partitions = [
+        #         _where_helper.remote(k, v, other, self.columns, cond.columns,
+        #                              None, *args) for k, v in zipped_partitions
+        #     ]
+        #
+        # if inplace:
+        #     self._update_inplace(
+        #         row_partitions=new_partitions,
+        #         row_metadata=self._row_metadata,
+        #         col_metadata=self._col_metadata)
+        # else:
+        #     return DataFrame(
+        #         row_partitions=new_partitions,
+        #         row_metadata=self._row_metadata,
+        #         col_metadata=self._col_metadata)
 
     def xs(self, key, axis=0, level=None, drop_level=True):
         raise NotImplementedError(
