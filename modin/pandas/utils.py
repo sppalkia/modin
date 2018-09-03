@@ -159,38 +159,6 @@ def _get_nan_block_id(n_row=1, n_col=1, transpose=False):
     return _NAN_BLOCKS[shape]
 
 
-def _get_lengths(df):
-    """Gets the length of the DataFrame.
-    Args:
-        df: A remote pandas.DataFrame object.
-    Returns:
-        Returns an integer length of the DataFrame object. If the attempt
-            fails, returns 0 as the length.
-    """
-    try:
-        return len(df)
-    # Because we sometimes have cases where we have summary statistics in our
-    # DataFrames
-    except TypeError:
-        return 0
-
-
-def _get_widths(df):
-    """Gets the width (number of columns) of the DataFrame.
-    Args:
-        df: A remote pandas.DataFrame object.
-    Returns:
-        Returns an integer width of the DataFrame object. If the attempt
-            fails, returns 0 as the length.
-    """
-    try:
-        return len(df.columns)
-    # Because we sometimes have cases where we have summary statistics in our
-    # DataFrames
-    except TypeError:
-        return 0
-
-
 def _partition_pandas_dataframe(df, num_partitions=None, row_chunksize=None):
     """Partitions a Pandas DataFrame object.
     Args:
@@ -549,38 +517,6 @@ def writer(df_chunk, row_loc, col_loc, item):
     df_chunk = df_chunk.copy()
     df_chunk.iloc[row_loc, col_loc] = item
     return df_chunk
-
-
-@ray.remote
-def _build_col_widths(df_col):
-    """Compute widths (# of columns) for each partition."""
-    widths = np.array(
-        ray.get([_deploy_func.remote(_get_widths, d) for d in df_col]))
-
-    return widths
-
-
-@ray.remote
-def _build_row_lengths(df_row):
-    """Compute lengths (# of rows) for each partition."""
-    lengths = np.array(
-        ray.get([_deploy_func.remote(_get_lengths, d) for d in df_row]))
-
-    return lengths
-
-
-@ray.remote
-def _build_coord_df(lengths, index):
-    """Build the coordinate DataFrame over all partitions."""
-    filtered_lengths = [x for x in lengths if x > 0]
-    coords = None
-    if len(filtered_lengths) > 0:
-        coords = np.vstack([
-            np.column_stack((np.full(l, i), np.arange(l)))
-            for i, l in enumerate(filtered_lengths)
-        ])
-    col_names = ("partition", "index_within_partition")
-    return pandas.DataFrame(coords, index=index, columns=col_names)
 
 
 @ray.remote

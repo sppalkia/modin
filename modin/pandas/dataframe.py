@@ -4684,43 +4684,6 @@ class DataFrame(object):
         from .indexing import _iLoc_Indexer
         return _iLoc_Indexer(self)
 
-    def _copartition(self, other, new_index):
-        """Colocates the values of other with this for certain operations.
-
-        NOTE: This method uses the indexes of each DataFrame to order them the
-            same. This operation does an implicit shuffling of data and zips
-            the two DataFrames together to be operated on.
-
-        Args:
-            other: The other DataFrame to copartition with.
-
-        Returns:
-            Two new sets of partitions, copartitioned and zipped.
-        """
-        # Put in the object store so they aren't serialized each iteration.
-        old_self_index = ray.put(self.index)
-        new_index = ray.put(new_index)
-        old_other_index = ray.put(other.index)
-
-        new_num_partitions = max(
-            len(self._block_partitions.T), len(other._block_partitions.T))
-
-        new_partitions_self = \
-            np.array([_reindex_helper._submit(
-                args=tuple([old_self_index, new_index, 1,
-                            new_num_partitions] + block.tolist()),
-                num_return_vals=new_num_partitions)
-                for block in self._block_partitions.T]).T
-
-        new_partitions_other = \
-            np.array([_reindex_helper._submit(
-                args=tuple([old_other_index, new_index, 1,
-                            new_num_partitions] + block.tolist()),
-                num_return_vals=new_num_partitions)
-                for block in other._block_partitions.T]).T
-
-        return zip(new_partitions_self, new_partitions_other)
-
     def _create_dataframe_from_manager(self, new_manager, inplace=False):
         """Returns or updates a DataFrame given new data_manager"""
         if not inplace:
@@ -4764,27 +4727,3 @@ def _merge_columns(left_columns, right_columns, *args):
     return pandas.DataFrame(columns=left_columns, index=[0], dtype='uint8') \
         .merge(pandas.DataFrame(columns=right_columns, index=[0],
                                 dtype='uint8'), *args).columns
-
-
-@ray.remote
-def _where_helper(left, cond, other, left_columns, cond_columns, other_columns,
-                  *args):
-
-    left = pandas.concat(ray.get(left.tolist()), axis=1, copy=False)
-    # We have to reset the index and columns here because we are coming
-    # from blocks and the axes are set according to the blocks. We have
-    # already correctly copartitioned everything, so there's no
-    # correctness problems with doing this.
-    left.reset_index(inplace=True, drop=True)
-    left.columns = left_columns
-
-    cond = pandas.concat(ray.get(cond.tolist()), axis=1, copy=False)
-    cond.reset_index(inplace=True, drop=True)
-    cond.columns = cond_columns
-
-    if isinstance(other, np.ndarray):
-        other = pandas.concat(ray.get(other.tolist()), axis=1, copy=False)
-        other.reset_index(inplace=True, drop=True)
-        other.columns = other_columns
-
-    return left.where(cond, other, *args)
