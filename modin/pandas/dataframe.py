@@ -1834,8 +1834,8 @@ class DataFrame(object):
         Returns:
             Prints the summary of a DataFrame and returns None.
         """
-        index = self._data_manager.index
-        columns = self._data_manager.columns
+        index = self.index
+        columns = self.columns
         dtypes = self.dtypes
 
         # Set up default values
@@ -3202,10 +3202,10 @@ class DataFrame(object):
             else 0
 
         if axis == 0:
-            axis_labels = self._data_manager.index
+            axis_labels = self.index
             axis_length = len(axis_labels)
         else:
-            axis_labels = self._data_manager.column
+            axis_labels = self.column
             axis_length = len(axis_labels)
 
         if weights is not None:
@@ -3602,86 +3602,26 @@ class DataFrame(object):
         if not is_list_like(by):
             by = [by]
 
+        # Currently, sort_values will just reindex based on the sorted values.
+        # TODO create a more efficient way to sort
         if axis == 0:
-            broadcast_value_dict = {str(col): self[col] for col in by}
-            broadcast_values = pandas.DataFrame(broadcast_value_dict)
+            broadcast_value_dict = {col: self[col] for col in by}
+            broadcast_values = pandas.DataFrame(broadcast_value_dict, index=self.index)
+
+            new_index = broadcast_values.sort_values(by=by, axis=axis, ascending=ascending, kind=kind).index
+            return self.reindex(index=new_index)
         else:
-            broadcast_value_list = [
-                to_pandas(self[row::len(self.index)]) for row in by
-            ]
+            broadcast_value_list = [to_pandas(self[row::len(self.index)]) for row in by]
 
             index_builder = list(zip(broadcast_value_list, by))
-
-            for row, idx in index_builder:
-                row.index = [str(idx)]
 
             broadcast_values = \
                 pandas.concat([row for row, idx in index_builder], copy=False)
 
-        # We are converting the by to string here so that we don't have a
-        # collision with the RangeIndex on the inner frame. It is cheap and
-        # gaurantees that we sort by the correct column.
-        by = [str(col) for col in by]
+            broadcast_values.columns = self.columns
+            new_columns = broadcast_values.sort_values(by=by, axis=axis, ascending=ascending, kind=kind).columns
 
-        args = (by, axis, ascending, False, kind, na_position)
-
-        def _sort_helper(df, broadcast_values, axis, *args):
-            """Sorts the data on a partition.
-
-            Args:
-                df: The DataFrame to sort.
-                broadcast_values: The by DataFrame to use for the sort.
-                axis: The axis to sort over.
-                args: The args for the sort.
-
-            Returns:
-                 A new sorted DataFrame.
-            """
-            if axis == 0:
-                broadcast_values.index = df.index
-                names = broadcast_values.columns
-            else:
-                broadcast_values.columns = df.columns
-                names = broadcast_values.index
-
-            return pandas.concat([df, broadcast_values], axis=axis ^ 1,
-                                 copy=False).sort_values(*args) \
-                .drop(names, axis=axis ^ 1)
-
-        if axis == 0:
-            new_column_partitions = _map_partitions(
-                lambda df: _sort_helper(df, broadcast_values, axis, *args),
-                self._col_partitions)
-
-            new_row_partitions = None
-            new_columns = self.columns
-
-            # This is important because it allows us to get the axis that we
-            # aren't sorting over. We need the order of the columns/rows and
-            # this will provide that in the return value.
-            new_index = broadcast_values.sort_values(*args).index
-        else:
-            new_row_partitions = _map_partitions(
-                lambda df: _sort_helper(df, broadcast_values, axis, *args),
-                self._row_partitions)
-
-            new_column_partitions = None
-            new_columns = broadcast_values.sort_values(*args).columns
-            new_index = self.index
-
-        if inplace:
-            self._update_inplace(
-                row_partitions=new_row_partitions,
-                col_partitions=new_column_partitions,
-                columns=new_columns,
-                index=new_index)
-        else:
-            return DataFrame(
-                row_partitions=new_row_partitions,
-                col_partitions=new_column_partitions,
-                columns=new_columns,
-                index=new_index,
-                dtypes_cache=self._dtypes_cache)
+            return self.reindex(columns=new_columns)
 
     def sortlevel(self,
                   level=0,
@@ -4241,11 +4181,8 @@ class DataFrame(object):
         if not isinstance(other, DataFrame):
             other = DataFrame(other)
 
-        def update_helper(x, y):
-            x.update(y, join, overwrite, filter_func, False)
-            return x
-
-        self._inter_df_op_helper(update_helper, other, join, None, inplace=True)
+        data_manager = self._data_manager.update(other._data_manager, join=join, overwrite=overwrite, filter_func=filter_func, raise_conflict=raise_conflict)
+        self._update_inplace(new_manager=data_manager)
 
     def var(self,
             axis=None,
@@ -4333,57 +4270,11 @@ class DataFrame(object):
             index = self.index if not axis else self.columns
             other = pandas.Series(other, index=index)
 
-        return DataFrame(data_manager=self._data_manager.where(cond._data_manager, other, axis=axis, level=level))
-        # Series has to be treated specially because we're operating on row
-        # partitions from here on.
-        # elif isinstance(other, pandas.Series):
-        #     if axis == 0:
-        #         # Pandas determines which index to use based on axis.
-        #         other = other.reindex(self.index)
-        #         other.index = pandas.RangeIndex(len(other))
-        #
-        #         # Since we're working on row partitions, we have to partition
-        #         # the Series based on the partitioning of self (since both
-        #         # self and cond are co-partitioned by self.
-        #         other_builder = []
-        #         for length in self._row_metadata._lengths:
-        #             other_builder.append(other[:length])
-        #             other = other[length:]
-        #             # Resetting the index here ensures that we apply each part
-        #             # to the correct row within the partitions.
-        #             other.index = pandas.RangeIndex(len(other))
-        #
-        #         other = (obj for obj in other_builder)
-        #
-        #         new_partitions = [
-        #             _where_helper.remote(k, v, next(other, pandas.Series()),
-        #                                  self.columns, cond.columns, None,
-        #                                  *args) for k, v in zipped_partitions
-        #         ]
-        #     else:
-        #         other = other.reindex(self.columns)
-        #         new_partitions = [
-        #             _where_helper.remote(k, v, other, self.columns,
-        #                                  cond.columns, None, *args)
-        #             for k, v in zipped_partitions
-        #         ]
-        #
-        # else:
-        #     new_partitions = [
-        #         _where_helper.remote(k, v, other, self.columns, cond.columns,
-        #                              None, *args) for k, v in zipped_partitions
-        #     ]
-        #
-        # if inplace:
-        #     self._update_inplace(
-        #         row_partitions=new_partitions,
-        #         row_metadata=self._row_metadata,
-        #         col_metadata=self._col_metadata)
-        # else:
-        #     return DataFrame(
-        #         row_partitions=new_partitions,
-        #         row_metadata=self._row_metadata,
-        #         col_metadata=self._col_metadata)
+        data_manager = self._data_manager.where(cond._data_manager, other, axis=axis, level=level)
+        if inplace:
+            self._update_inplace(new_manager=data_manager)
+        else:
+            return DataFrame(data_manager=data_manager)
 
     def xs(self, key, axis=0, level=None, drop_level=True):
         raise NotImplementedError(

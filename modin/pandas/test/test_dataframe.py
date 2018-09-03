@@ -3239,9 +3239,6 @@ def test_where():
     pandas_result = pandas_df.where(pandas_cond_df, other, axis=1)
     ray_result = ray_df.where(ray_cond_df, other, axis=1)
 
-    # print(pandas_result)
-    # print(to_pandas(ray_result))
-    # print(other)
     assert all((to_pandas(ray_result) == pandas_result).all())
     # assert ray_df_equals_pandas(ray_result, pandas_result)
 

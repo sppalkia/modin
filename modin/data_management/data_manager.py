@@ -334,6 +334,16 @@ class PandasDataManager(object):
             new_data = reindexed_self.inter_data_operation(axis, lambda l, r: where_builder_series(l, r, other, **kwargs), reindexed_cond)
             return cls(new_data, self.index, self.columns)
 
+    def update(self, other, **kwargs):
+        assert isinstance(other, type(self)), \
+            "Must have the same DataManager subclass to perform this operation"
+
+        def update_builder(df, other, **kwargs):
+            df.update(other, **kwargs)
+            return df
+
+        return self._inter_df_op_handler(update_builder, other, **kwargs)
+
     def add(self, other, **kwargs):
         #TODO: need to write a prepare_function for inter_df operations
         func = pandas.DataFrame.add
