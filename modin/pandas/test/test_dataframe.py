@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import pytest
+import io
 import numpy as np
 import pandas
 import pandas.util.testing as tm
@@ -2091,12 +2092,26 @@ def test_infer_objects():
         ray_df.infer_objects()
 
 
-@pytest.fixture
-def test_info(ray_df):
-    info_string = ray_df.info()
-    assert '<class \'modin.pandas.dataframe.DataFrame\'>\n' in info_string
-    info_string = ray_df.info(memory_usage=True)
-    assert 'memory_usage: ' in info_string
+#@pytest.fixture
+def test_info():
+    ray_df = pd.DataFrame({
+        'col1': [1, 2, 3, np.nan],
+        'col2': [4, 5, np.nan, 7],
+        'col3': [8, np.nan, 10, 11],
+        'col4': [np.nan, 13, 14, 15]
+    })
+    ray_df.info(memory_usage='deep')
+    with io.StringIO() as buf:
+        ray_df.info(buf=buf)
+        info_string = buf.getvalue()
+        assert '<class \'modin.pandas.dataframe.DataFrame\'>\n' in info_string
+        assert 'memory usage: ' in info_string
+        assert 'Data columns (total 4 columns):' in info_string
+    with io.StringIO() as buf:
+        ray_df.info(buf=buf, verbose=False, memory_usage=False)
+        info_string = buf.getvalue()
+        assert 'memory usage: ' not in info_string
+        assert 'Columns: 4 entries, col1 to col4' in info_string
 
 
 @pytest.fixture
@@ -2279,8 +2294,9 @@ def test_melt():
         ray_df.melt()
 
 
-@pytest.fixture
-def test_memory_usage(ray_df):
+#@pytest.fixture
+def test_memory_usage():
+    ray_df = create_test_dataframe()
     assert type(ray_df.memory_usage()) is pandas.core.series.Series
     assert ray_df.memory_usage(index=True).at['Index'] is not None
     assert ray_df.memory_usage(deep=True).sum() >= \

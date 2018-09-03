@@ -1797,85 +1797,124 @@ class DataFrame(object):
             "To contribute to Pandas on Ray, please visit "
             "github.com/modin-project/modin.")
 
-    def info(self,
-             verbose=None,
-             buf=None,
-             max_cols=None,
-             memory_usage=None,
-             null_counts=None):
-        def info_helper(df):
-            output_buffer = io.StringIO()
-            df.info(
-                verbose=verbose,
-                buf=output_buffer,
-                max_cols=max_cols,
-                memory_usage=memory_usage,
-                null_counts=null_counts)
-            return output_buffer.getvalue()
+    def info(self, 
+            verbose=None,
+            buf=None,
+            max_cols=None,
+            memory_usage=None,
+            null_counts=None):
+        """Print a concise summary of a DataFrame, which includes the index
+        dtype and column dtypes, non-null values and memory usage.
 
-        # Combine the per-partition info and split into lines
-        result = ''.join(
-            ray.get(_map_partitions(info_helper, self._col_partitions)))
-        lines = result.split('\n')
+        Args:
+            verbose (bool, optional): Whether to print the full summary. Defaults
+                to true
 
+            buf (writable buffer): Where to send output. Defaults to sys.stdout
+
+            max_cols (int, optional): When to switch from verbose to truncated
+                output. By defualt, this is 100.
+
+            memory_usage (bool, str, optional): Specifies whether the total memory
+                usage of the DataFrame elements (including index) should be displayed.
+                True always show memory usage. False never shows memory usage. A value 
+                of ‘deep’ is equivalent to “True with deep introspection”. Memory usage 
+                is shown in human-readable units (base-2 representation). Without deep 
+                introspection a memory estimation is made based in column dtype and number 
+                of rows assuming values consume the same memory amount for corresponding 
+                dtypes. With deep memory introspection, a real memory usage calculation is 
+                performed at the cost of computational resources. Defaults to True.
+
+            null_counts (bool, optional): Whetehr to show the non-null counts. By default,
+                this is shown only when the frame is smaller than 100 columns and 1690785
+                rows. A value of True always shows the counts and False never shows the 
+                counts.
+
+        Returns:
+            Prints the summary of a DataFrame and returns None.
+        """
+        index = self._data_manager.index
+        columns = self._data_manager.columns
+        dtypes = self.dtypes
+
+        # Set up default values
+        verbose = True if verbose is None else verbose
+        buf = sys.stdout if not buf else buf
+        max_cols = 100 if not max_cols else max_cols
+        memory_usage = True if memory_usage is None else memory_usage
+        if not null_counts:
+            if len(columns) < 100 and len(index) < 1690785:
+                null_counts = True
+            else:
+                null_counts = False
+
+        # Determine if actually verbose
+        actually_verbose = True if verbose and max_cols > len(columns) else False
+
+        if type(memory_usage) == str and memory_usage == 'deep':
+            memory_usage_deep = True
+        else:
+            memory_usage_deep = False
+
+        # Start putting together output 
         # Class denoted in info() output
         class_string = '<class \'modin.pandas.dataframe.DataFrame\'>\n'
 
         # Create the Index info() string by parsing self.index
-        index_string = self.index.summary() + '\n'
+        index_string = index.summary() + '\n'
 
-        # A column header is needed in the inf() output
-        col_header = 'Data columns (total {0} columns):\n' \
-            .format(len(self.columns))
+        if memory_usage or null_counts:
+            results_data = self._data_manager.info(
+                    verbose=actually_verbose,
+                    buf=buf,
+                    max_cols=max_cols,
+                    memory_usage=memory_usage,
+                    null_counts=null_counts
+                    )
+            if null_counts:
+                # For some reason, the counts table has a shape of (columns, columns)
+                counts = results_data['count']
+                counts.columns = columns
+            if memory_usage:
+                # For some reason, the memory table has a shape of (columns, columns)
+                # but it doesn't matter because the cells not on the diagonal are NaN
+                memory_usage_data = results_data['memory'].sum() + index.memory_usage(deep=memory_usage_deep)
 
-        # Parse the per-partition values to get the per-column details
-        # Find all the lines in the output that start with integers
-        prog = re.compile('^[0-9]+.+')
-        col_lines = [prog.match(line) for line in lines]
-        cols = [c.group(0) for c in col_lines if c is not None]
-        # replace the partition columns names with real column names
-        columns = [
-            "{0}\t{1}\n".format(self.columns[i], cols[i].split(" ", 1)[1])
-            for i in range(len(cols))
-        ]
-        col_string = ''.join(columns) + '\n'
+        if actually_verbose:
+            # Create string for verbose output
+            col_string = 'Data columns (total {0} columns):\n' \
+                .format(len(columns))
+            for col, dtype in zip(columns, dtypes):
+                col_string += '{0}\t'.format(col)
+                if null_counts:
+                    col_string += '{0} not-null '.format(counts.loc[col, col])
+                col_string += '{0}\n'.format(dtype)
+        else:
+            # Create string for not verbose output
+            col_string = 'Columns: {0} entries, {1} to {2}\n'\
+                    .format(len(columns), columns[0], columns[-1])
 
         # A summary of the dtypes in the dataframe
         dtypes_string = "dtypes: "
-        for dtype, count in self.dtypes.value_counts().iteritems():
+        for dtype, count in dtypes.value_counts().iteritems():
             dtypes_string += "{0}({1}),".format(dtype, count)
         dtypes_string = dtypes_string[:-1] + '\n'
 
-        # Compute the memory usage by summing per-partitions return values
-        # Parse lines for memory usage number
-        prog = re.compile('^memory+.+')
-        mems = [prog.match(line) for line in lines]
-        mem_vals = [
-            float(re.search(r'\d+', m.group(0)).group()) for m in mems
-            if m is not None
-        ]
-
-        memory_string = ""
-
-        if len(mem_vals) != 0:
-            # Sum memory usage from each partition
-            if memory_usage != 'deep':
-                memory_string = 'memory usage: {0}+ bytes' \
-                    .format(sum(mem_vals))
+        # Create memory usage string
+        memory_string = ''
+        if memory_usage:
+            if memory_usage_deep:
+                memory_string = 'memory usage: {0} bytes'.format(memory_usage_data)
             else:
-                memory_string = 'memory usage: {0} bytes'.format(sum(mem_vals))
+                memory_string = 'memory usage: {0}+ bytes'.format(memory_usage_data)
 
         # Combine all the components of the info() output
         result = ''.join([
-            class_string, index_string, col_header, col_string, dtypes_string,
-            memory_string
-        ])
+            class_string, index_string, col_string, dtypes_string, memory_string 
+            ])
 
         # Write to specified output buffer
-        if buf:
-            buf.write(result)
-        else:
-            sys.stdout.write(result)
+        buf.write(result)
 
     def insert(self, loc, column, value, allow_duplicates=False):
         """Insert column into DataFrame at specified location.
@@ -2240,14 +2279,24 @@ class DataFrame(object):
             "github.com/modin-project/modin.")
 
     def memory_usage(self, index=True, deep=False):
-        def remote_func(df):
-            return df.memory_usage(index=False, deep=deep)
+        """Returns the memory usage of each column in bytes
 
-        result = self._map_reduce(axis=0, map_func=remote_func)
+        Args:
+            index (bool): Whether to include the memory usage of the DataFrame's
+                index in returned Series. Defaults to True
+            deep (bool): If True, introspect the data deeply by interrogating 
+            objects dtypes for system-level memory consumption. Defaults to False
+
+        Returns:
+            A Series where the index are the column names and the values are
+            the memory usage of each of the columns in bytes. If `index=true`,
+            then the first value of the Series will be 'Index' with its memory usage.
+        """
+        result = self._data_manager.memory_usage(index=index, deep=deep)
 
         result.index = self.columns
         if index:
-            index_value = self._row_metadata.index.memory_usage(deep=deep)
+            index_value = self.index.memory_usage(deep=deep)
             return pandas.Series(index_value, index=['Index']).append(result)
 
         return result
