@@ -47,7 +47,6 @@ class DataFrame(object):
                  block_partitions=None,
                  row_metadata=None,
                  col_metadata=None,
-                 dtypes_cache=None,
                  data_manager=None):
         """Distributed DataFrame object backed by Pandas dataframes.
 
@@ -77,8 +76,6 @@ class DataFrame(object):
             self._data_manager = data._data_manager
             return
 
-        self._dtypes_cache = dtypes_cache
-
         # Check type of data and use appropriate constructor
         if data is not None or (col_partitions is None
                                 and row_partitions is None
@@ -91,9 +88,6 @@ class DataFrame(object):
                 columns=columns,
                 dtype=dtype,
                 copy=copy)
-
-            # Cache dtypes
-            self._dtypes_cache = pandas_df.dtypes
 
             self._data_manager = from_pandas(pandas_df)._data_manager
         else:
@@ -124,20 +118,12 @@ class DataFrame(object):
                         partitions = col_partitions
                         axis_length = len(index) if index is not None else \
                             len(row_metadata)
-                        # All partitions will already have correct dtypes
-                        self._dtypes_cache = [
-                            _deploy_func.remote(lambda df: df.dtypes, pandas_df)
-                            for pandas_df in col_partitions
-                        ]
 
                     # TODO: write explicit tests for "short and wide"
                     # column partitions
                     self._block_partitions = \
                         _create_block_partitions(partitions, axis=axis,
                                                  length=axis_length)
-
-            if self._dtypes_cache is None and data_manager is None:
-                self._get_remote_dtypes()
 
             if data_manager is None:
                 self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
@@ -341,14 +327,6 @@ class DataFrame(object):
         result.index = self.columns
         return result
 
-    def _get_remote_dtypes(self):
-        """Finds and caches ObjectIDs for the dtypes of each column partition.
-        """
-        self._dtypes_cache = [
-            _compile_remote_dtypes.remote(*column)
-            for column in self._block_partitions.T
-        ]
-
     @property
     def dtypes(self):
         """Get the dtypes for this DataFrame.
@@ -356,16 +334,7 @@ class DataFrame(object):
         Returns:
             The dtypes for this DataFrame.
         """
-        assert self._dtypes_cache is not None
-
-        if isinstance(self._dtypes_cache, list) and \
-                isinstance(self._dtypes_cache[0],
-                           ray.ObjectID):
-            self._dtypes_cache = pandas.concat(
-                ray.get(self._dtypes_cache), copy=False)
-            self._dtypes_cache.index = self.columns
-
-        return self._dtypes_cache
+        return self._data_manager.dtypes
 
     @property
     def empty(self):
@@ -413,7 +382,6 @@ class DataFrame(object):
         old_manager = self._data_manager
         self._data_manager = new_manager
         old_manager.free()
-        self._get_remote_dtypes()
 
     def add_prefix(self, prefix):
         """Add a prefix to each of the column names.
@@ -526,7 +494,7 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the applied absolute value.
         """
-        for t in self.dtypes:
+        for t in self._data_manager.dtypes:
             if np.dtype('O') == t:
                 # TODO Give a more accurate error to Pandas
                 raise TypeError("bad operand type for abs():", "str")
@@ -1786,9 +1754,7 @@ class DataFrame(object):
         Returns:
             The counts of dtypes in this object.
         """
-        return ray.get(
-            _deploy_func.remote(lambda df: df.get_dtype_counts(),
-                                self._row_partitions[0]))
+        return self.dtypes.value_counts()
 
     def get_ftype_counts(self):
         """Get the counts of ftypes in this object.
@@ -1885,7 +1851,7 @@ class DataFrame(object):
             A Series with the index for each minimum value for the axis
                 specified.
         """
-        if not all(d != np.dtype('O') for d in self.dtypes):
+        if not all(d != np.dtype('O') for d in self._data_manager.dtypes):
             raise TypeError(
                 "reduction operation 'argmax' not allowed for this dtype")
 
@@ -1934,7 +1900,7 @@ class DataFrame(object):
         """
         index = self._data_manager.index
         columns = self._data_manager.columns
-        dtypes = self.dtypes
+        dtypes = self._data_manager.dtypes
 
         # Set up default values
         verbose = True if verbose is None else verbose
@@ -2870,20 +2836,20 @@ class DataFrame(object):
 
         if not numeric_only:
             # check if there are any object columns
-            if all(check_bad_dtype(t) for t in self.dtypes):
+            if all(check_bad_dtype(t) for t in self._data_manager.dtypes):
                 raise TypeError("can't multiply sequence by non-int of type "
                                 "'float'")
             else:
-                if next((True for t in self.dtypes if check_bad_dtype(t)),
+                if next((True for t in self._data_manager.dtypes if check_bad_dtype(t)),
                         False):
-                    dtype = next(t for t in self.dtypes if check_bad_dtype(t))
+                    dtype = next(t for t in self._data_manager.dtypes if check_bad_dtype(t))
                     raise ValueError("Cannot compare type '{}' with type '{}'"
                                      .format(type(dtype), float))
         else:
             # Normally pandas returns this near the end of the quantile, but we
             # can't afford the overhead of running the entire operation before
             # we error.
-            if all(check_bad_dtype(t) for t in self.dtypes):
+            if all(check_bad_dtype(t) for t in self._data_manager.dtypes):
                 raise ValueError("need at least one array to concatenate")
 
         # check that all qs are between 0 and 1
@@ -3395,7 +3361,7 @@ class DataFrame(object):
             return column, functools.partial(issubclass, dtype.type)
 
         for column, f in itertools.starmap(is_dtype_instance_mapper,
-                                           self.dtypes.iteritems()):
+                                           self._data_manager.dtypes.iteritems()):
             if include:  # checks for the case of empty include or exclude
                 include_these[column] = any(map(f, include))
             if exclude:
@@ -4756,7 +4722,7 @@ class DataFrame(object):
         Returns:
             A modified DataFrame where every element is the negation of before
         """
-        for t in self.dtypes:
+        for t in self._data_manager.dtypes:
             if not (is_bool_dtype(t) or is_numeric_dtype(t)
                     or is_timedelta64_dtype(t)):
                 raise TypeError("Unary negative expects numeric dtype, not {}"
