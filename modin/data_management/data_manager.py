@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import numpy as np
 import pandas
+from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import _get_dtype_from_object
 
 from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
@@ -23,7 +24,12 @@ class PandasDataManager(object):
         if dtypes:
             self.dtypes = dtypes
         else:
-            self.dtypes = self.data.map_across_full_axis(0, lambda df: df.dtypes).to_pandas()
+            map_func = lambda df: df.dtypes
+            def func(row):
+                return find_common_type(row.values)
+            reduce_func = lambda df: df.T.apply(func, axis=1)
+            self.dtypes = self.data.full_reduce(map_func, reduce_func, 0)
+            self.dtypes.index = self.columns
 
     # Index and columns objects
     # These objects are currently not distributed.
