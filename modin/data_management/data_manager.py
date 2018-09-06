@@ -1238,7 +1238,27 @@ class PandasDataManager(object):
         func = self._prepare_method(repartition_func, **kwargs)
         return self.data.manual_shuffle(axis, func)
 
-    def merge
+    def merge(self, right, on, left_on, right_on, left_index, right_index, how, **kwargs):
+
+        if left_index:
+            index = self.index.sort_values()
+            uniques = index.unique()
+
+            if len(uniques) == len(index):
+
+
+            def manual_partition_func(df, num_splits=None, **kwargs):
+                df.index = index
+                uniques = index.unique()
+                if len(uniques) == len(index):
+                    df.sort_index(inplace=True)
+
+                elif len(uniques) < num_splits:
+        elif on is not None:
+            pass
+        else:
+            # `left_on` is None
+            pass
 
 
 class RayPandasDataManager(PandasDataManager):
