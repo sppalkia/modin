@@ -647,6 +647,27 @@ class BlockPartitions(object):
         result = np.array([partitions[i].apply(func, num_splits=cls._compute_num_partitions(), other_axis_partition=other_partitions[i]) for i in range(len(partitions))])
         return cls(result) if axis else cls(result.T)
 
+    def manual_shuffle(self, axis, shuffle_func):
+        """Shuffle the partitions based on the `shuffle_func`.
+
+        Args:
+            axis:
+            shuffle_func:
+
+        Returns:
+             A new BlockPartitions object, the type of object that called this.
+        """
+        cls = type(self)
+
+        if axis:
+            partitions = self.row_partitions
+        else:
+            partitions = self.column_partitions
+
+        func = self.preprocess_func(shuffle_func)
+        result = np.array([part.shuffle(func, num_splits=cls._compute_num_partitions()) for part in partitions])
+        return cls(result) if axis else cls(result.T)
+
     def __getitem__(self, key):
         cls = type(self)
         return cls(self.partitions[key])

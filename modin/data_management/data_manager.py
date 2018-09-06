@@ -670,7 +670,6 @@ class PandasDataManager(object):
         func = self._prepare_method(info_builder, **kwargs)
         return self.full_axis_reduce(func, 0)
 
-
     def first_valid_index(self):
 
         # It may be possible to incrementally check each partition, but this
@@ -1221,6 +1220,25 @@ class PandasDataManager(object):
         result_data = self.map_across_full_axis(axis, func_prepared)
 
         return self._post_process_apply(result_data, axis)
+    #END UDF
+
+    # Manual Partitioning methods (e.g. merge, groupby)
+    # These methods require some sort of manual partitioning due to their
+    # nature. They require certain data to exist on the same partition, and
+    # after the shuffle, there should be only a local map required.
+    def _manual_repartition(self, axis, repartition_func, **kwargs):
+        """This method applies all manual partitioning functions.
+
+        :param axis:
+        :param repartition_func:
+
+        Returns:
+            A `BlockPartitions` object.
+        """
+        func = self._prepare_method(repartition_func, **kwargs)
+        return self.data.manual_shuffle(axis, func)
+
+    def merge
 
 
 class RayPandasDataManager(PandasDataManager):
