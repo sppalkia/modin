@@ -4,7 +4,6 @@ from __future__ import print_function
 
 import numpy as np
 import pandas
-
 from pandas.compat import string_types
 from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like)
@@ -24,14 +23,26 @@ class PandasDataManager(object):
         self.index = index
         self.columns = columns
         if dtypes is not None:
-            self.dtypes = dtypes
-        else:
+            self._dtype_cache = dtypes
+
+    # dtypes
+    _dtype_cache = None
+
+    def _get_dtype(self):
+        if self._dtype_cache is None:
             map_func = lambda df: df.dtypes
+
             def func(row):
                 return find_common_type(row.values)
-            reduce_func = lambda df: df.T.apply(func, axis=1)
-            self.dtypes = self.data.full_reduce(map_func, reduce_func, 0)
-            self.dtypes.index = self.columns
+
+            self._dtype_cache = self.data.full_reduce(map_func, lambda df: df.apply(func, axis=0), 0)
+            self._dtype_cache.index = self.columns
+        return self._dtype_cache
+
+    def _set_dtype(self, dtypes):
+        self._dtype_cache = dtypes
+
+    dtypes = property(_get_dtype, _set_dtype)
 
     # Index and columns objects
     # These objects are currently not distributed.
@@ -972,7 +983,7 @@ class PandasDataManager(object):
         new_data = self.map_across_full_axis(axis, func)
         new_index = self.compute_index(0, new_data, False)
         new_columns = self.compute_index(1, new_data, True)
-        new_dtypes = pd.Series([np.float64 for _ in new_columns], index=new_columns)
+        new_dtypes = pandas.Series([np.float64 for _ in new_columns], index=new_columns)
 
         return cls(new_data, new_index, new_columns, new_dtypes)
 
@@ -990,7 +1001,7 @@ class PandasDataManager(object):
             new_columns = self.compute_index(1, new_data, True)
         else:
             new_columns = self.columns
-        new_dtypes = pd.Series([np.float64 for _ in new_columns], index=new_columns)
+        new_dtypes = pandas.Series([np.float64 for _ in new_columns], index=new_columns)
         return cls(new_data, self.index, new_columns, new_dtypes)
 
     def diff(self, **kwargs):
@@ -1333,7 +1344,7 @@ class PandasDataManager(object):
             uniques = index.unique()
 
             if len(uniques) == len(index):
-
+                pass
 
             def manual_partition_func(df, num_splits=None, **kwargs):
                 df.index = index
@@ -1342,6 +1353,7 @@ class PandasDataManager(object):
                     df.sort_index(inplace=True)
 
                 elif len(uniques) < num_splits:
+                    pass
         elif on is not None:
             pass
         else:
