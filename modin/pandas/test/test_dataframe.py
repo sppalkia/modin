@@ -69,8 +69,8 @@ def test_int_dataframe():
     test_index(ray_df, pandas_df)
     test_size(ray_df, pandas_df)
     test_ndim(ray_df, pandas_df)
-    # test_ftypes(ray_df, pandas_df)
-    # test_dtypes(ray_df, pandas_df)
+    test_ftypes(ray_df, pandas_df)
+    test_dtypes(ray_df, pandas_df)
     test_values(ray_df, pandas_df)
     test_axes(ray_df, pandas_df)
     test_shape(ray_df, pandas_df)
@@ -129,8 +129,8 @@ def test_int_dataframe():
     for key in keys:
         test_get(ray_df, pandas_df, key)
 
-    # test_get_dtype_counts(ray_df, pandas_df)
-    # test_get_ftype_counts(ray_df, pandas_df)
+    test_get_dtype_counts(ray_df, pandas_df)
+    test_get_ftype_counts(ray_df, pandas_df)
     # test_iterrows(ray_df, pandas_df)
     # test_items(ray_df, pandas_df)
     # test_iteritems(ray_df, pandas_df)
@@ -1053,6 +1053,7 @@ def test_append():
 
 @pytest.fixture
 def test_apply(ray_df, pandas_df, func, axis):
+    print(func)
     ray_result = ray_df.apply(func, axis)
     pandas_result = pandas_df.apply(func, axis)
     if isinstance(ray_result, pd.DataFrame):
