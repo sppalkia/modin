@@ -431,13 +431,14 @@ class PandasDataManager(object):
 
     # Map partitions operations
     # These operations are operations that apply a function to every partition.
-    def map_partitions(self, func):
+    def map_partitions(self, func, new_dtypes=None):
         cls = type(self)
-        return cls(self.data.map_across_blocks(func), self.index, self.columns, None)
+        return cls(self.data.map_across_blocks(func), self.index, self.columns, new_dtypes)
 
     def abs(self):
         func = self._prepare_method(pandas.DataFrame.abs)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('float64') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def applymap(self, func):
         remote_func = self._prepare_method(pandas.DataFrame.applymap, func=func)
@@ -445,15 +446,18 @@ class PandasDataManager(object):
 
     def isin(self, **kwargs):
         func = self._prepare_method(pandas.DataFrame.isin, **kwargs)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('bool') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def isna(self):
         func = self._prepare_method(pandas.DataFrame.isna)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('bool') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def isnull(self):
         func = self._prepare_method(pandas.DataFrame.isnull)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('bool') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def negative(self, **kwargs):
         func = self._prepare_method(pandas.DataFrame.__neg__, **kwargs)
@@ -461,15 +465,17 @@ class PandasDataManager(object):
 
     def notna(self):
         func = self._prepare_method(pandas.DataFrame.notna)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('bool') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def notnull(self):
         func = self._prepare_method(pandas.DataFrame.notnull)
-        return self.map_partitions(func)
+        new_dtypes = pandas.Series([np.dtype('bool') for _ in self.columns], index=self.columns)
+        return self.map_partitions(func, new_dtypes=new_dtypes)
 
     def round(self, **kwargs):
         func = self._prepare_method(pandas.DataFrame.round, **kwargs)
-        return self.map_partitions(func)
+        return self.map_partitions(func, new_dtypes=self.dtypes.copy())
     # END Map partitions operations
 
     # Column/Row partitions reduce operations
@@ -1015,9 +1021,9 @@ class PandasDataManager(object):
                 dtype_indices[dtype] = [numeric_indices[i]]
             new_dtype = np.dtype(dtype)
             if dtype != np.int32 and new_dtype == np.int32:
-                new_dtype = np.int64
+                new_dtype = np.dtype('int64')
             elif dtype != np.float32 and new_dtype == np.float32:
-                new_dtype = np.float64
+                new_dtype = np.dtype('float64')
             new_dtypes[column] = new_dtype
 
         new_data = self.data
