@@ -242,48 +242,6 @@ Indexing Section
 """
 
 
-def _repartition_coord_df(old_coord_df, npartition):
-    """Repartition the (view of) coord_df by npartition
-
-    This function is best used when old_coord_df is not contigous.
-    For example, it turns:
-
-        partition index_within_partition
-    i0  0         0
-    i6  3         2
-
-    into
-
-        partition index_within_partition
-    i0  0         0
-    i6  0         1
-
-    Note(simon):
-        The resulting npartition will be <= npartition
-        passed in.
-    """
-    length = len(old_coord_df)
-    chunksize = (len(old_coord_df) // npartition
-                 if len(old_coord_df) % npartition == 0 else
-                 len(old_coord_df) // npartition + 1)
-
-    # genereate array([0, 0, 0, 1, 1, 1, 2])
-    partitions = np.repeat(np.arange(npartition), chunksize)[:length]
-
-    # generate array([0, 1, 2, 0, 1, 2, 0])
-    final_n_partition = np.max(partitions)
-    idx_in_part = np.tile(np.arange(chunksize), final_n_partition + 1)[:length]
-
-    final_df = pandas.DataFrame(
-        {
-            'partition': partitions,
-            'index_within_partition': idx_in_part
-        },
-        index=old_coord_df.index)
-
-    return final_df
-
-
 def _generate_blocks(old_row, new_row, old_col, new_col,
                      block_partition_2d_oid_arr):
     """
@@ -350,35 +308,6 @@ def _mask_block_partitions(blk_partitions, row_metadata, col_metadata):
             result_oid = extractor.remote(block_oid, [row_idx], [col_idx])
             result_oids.append(result_oid)
     return np.array(result_oids).reshape(shape)
-
-
-def _map_partitions(func, partitions, *argslists):
-    """Apply a function across the specified axis
-
-    Args:
-        func (callable): The function to apply
-        partitions ([ObjectID]): The list of partitions to map func on.
-
-    Returns:
-        A list of partitions ([ObjectID]) with the result of the function
-    """
-    if partitions is None:
-        return None
-
-    assert (callable(func))
-    if len(argslists) == 0:
-        return [_deploy_func.remote(func, part) for part in partitions]
-    elif len(argslists) == 1:
-        return [
-            _deploy_func.remote(func, part, argslists[0])
-            for part in partitions
-        ]
-    else:
-        assert (all(len(args) == len(partitions) for args in argslists))
-        return [
-            _deploy_func.remote(func, *args)
-            for args in zip(partitions, *argslists)
-        ]
 
 
 def _create_block_partitions(partitions, axis=0, length=None):
