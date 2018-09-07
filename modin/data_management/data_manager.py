@@ -21,7 +21,7 @@ class PandasDataManager(object):
         self.data = block_partitions_object
         self.index = index
         self.columns = columns
-        if dtypes:
+        if dtypes is not None:
             self.dtypes = dtypes
         else:
             map_func = lambda df: df.dtypes
@@ -340,7 +340,7 @@ class PandasDataManager(object):
             new_column_name = "index" if "index" not in self.columns else "level_0"
             new_columns = self.columns.insert(0, new_column_name)
             result = self.insert(0, new_column_name, self.index)
-            return cls(result.data, new_index, new_columns)
+            return cls(result.data, new_index, new_columns, None)
         else:
             # The copies here are to ensure that we do not give references to
             # this object for the purposes of updates.
@@ -972,7 +972,9 @@ class PandasDataManager(object):
             # We can't use self.columns.drop with duplicate keys because in Pandas
             # it throws an error.
             new_columns = [self.columns[i] for i in range(len(self.columns)) if i not in numeric_indices]
-            new_dtypes = [self.dtypes[i] for i in range(len(self.dtypes)) if i not in numeric_indices]
+            dtypes = dtypes.values
+            new_dtypes = pd.Series([dtypes[i] for i in range(len(dtypes)) if i not in numeric_indices])
+            new_dtypes.index = new_columns
         return cls(new_data, new_index, new_columns, new_dtypes)
     # END __delitem__ and drop
 
@@ -994,6 +996,38 @@ class PandasDataManager(object):
         new_dtypes = self.dtypes.insert(loc, _get_dtype_from_object(value))
         return cls(new_data, self.index, new_columns, new_dtypes)
     # END Insert
+
+    # astype
+    # This method changes the types of select columns to the new dtype.
+    def astype(self, col_dtypes, errors='raise', **kwargs):
+        cls = type(self)
+
+        print(col_dtypes)
+        # Group the indicies to update together and create new dtypes series
+        dtype_indices = dict()
+        new_dtypes = self.dtypes
+        columns = col_dtypes.keys()
+        numeric_indices = list(self.columns.get_indexer_for(columns))
+        for i, column in enumerate(columns):
+            if col_dtypes[column] not in col_dtypes.keys():
+                dtype_indices[col_dtypes[column]] = [numeric_indices[i]]
+            else:
+                dtype_indices[col_dtypes[column]].append(numeric_indices[i])
+            new_dtypes[column] = col_dtypes[column]
+
+        new_data = self.data
+        for dtype in dtype_indices.keys():
+
+            def astype(df, internal_indices=[]):
+                block_dtypes = dict()
+                for ind in internal_indices:
+                    block_dtypes[df.columns[ind]]= dtype
+                return df.astype(block_dtypes)
+
+            new_data = self.data.apply_func_to_select_indices(0, astype, dtype_indices[dtype], keep_remaining=True)
+
+        return cls(new_data, self.index, self.columns, new_dtypes)
+    # END astype
 
     # UDF (apply and agg) methods
     # There is a wide range of behaviors that are supported, so a lot of the

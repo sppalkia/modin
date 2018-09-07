@@ -1016,42 +1016,24 @@ class DataFrame(object):
             "github.com/modin-project/modin.")
 
     def astype(self, dtype, copy=True, errors='raise', **kwargs):
+        col_dtypes = dict()
         if isinstance(dtype, dict):
             if (not set(dtype.keys()).issubset(set(self.columns))
                     and errors == 'raise'):
                 raise KeyError("Only a column name can be used for the key in"
                                "a dtype mappings argument.")
-            columns = list(dtype.keys())
-            col_idx = [(self.columns.get_loc(columns[i]), columns[i]) if
-                       columns[i] in self.columns else (columns[i], columns[i])
-                       for i in range(len(columns))]
-            new_dict = {}
-            for idx, key in col_idx:
-                new_dict[idx] = dtype[key]
-            new_rows = _map_partitions(lambda df, dt: df.astype(dtype=dt,
-                                                                copy=True,
-                                                                errors=errors,
-                                                                **kwargs),
-                                       self._row_partitions, new_dict)
-            if copy:
-                return DataFrame(
-                    row_partitions=new_rows,
-                    columns=self.columns,
-                    index=self.index)
-            self._row_partitions = new_rows
+            col_dtypes = dtype
+
         else:
-            new_blocks = [_map_partitions(lambda d: d.astype(dtype=dtype,
-                                                             copy=True,
-                                                             errors=errors,
-                                                             **kwargs),
-                                          block)
-                          for block in self._block_partitions]
-            if copy:
-                return DataFrame(
-                    block_partitions=new_blocks,
-                    columns=self.columns,
-                    index=self.index)
-            self._block_partitions = new_blocks
+            for column in self._data_manager.columns:
+                col_dtypes[column] = dtype
+
+        print(col_dtypes)
+        new_data_manager = self._data_manager.astype(col_dtypes, errors, **kwargs)
+        if copy:
+            return DataFrame(data_manager = new_data_manager)
+        else:
+            self._update_inplace(new_data_manager)
 
     def at_time(self, time, asof=False):
         raise NotImplementedError(
