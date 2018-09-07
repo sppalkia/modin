@@ -318,9 +318,9 @@ class BlockPartitions(object):
             return self.transpose().to_pandas(False).T
         else:
             retrieved_objects = [[obj.to_pandas() for obj in part] for part in self.partitions]
-            #print(retrieved_objects[0])
             if all(isinstance(part, pandas.Series) for row in retrieved_objects for part in row):
                 axis = 0
+                retrieved_objects = np.array(retrieved_objects).T
             elif all(isinstance(part, pandas.DataFrame) for row in retrieved_objects for part in row):
                 axis = 1
             else:
@@ -338,12 +338,19 @@ class BlockPartitions(object):
         row_chunksize = compute_chunksize(len(df), num_splits)
         col_chunksize = compute_chunksize(len(df.columns), num_splits)
 
-        parts = [[put_func(df.iloc[i: i + row_chunksize, j: j + col_chunksize])
-                  for j in range(0, len(df.columns), col_chunksize)]
-                 for i in range(0, len(df), row_chunksize)]
+        # Each chunk must have a RangeIndex that spans its length and width
+        # according to our invariant.
+        def chunk_builder(i, j):
+            chunk = df.iloc[i: i + row_chunksize, j: j + col_chunksize]
+            chunk.index = pandas.RangeIndex(len(chunk.index))
+            chunk.columns = pandas.RangeIndex(len(chunk.columns))
+            return put_func(chunk)
+
+        parts = [[chunk_builder(i, j) for j in range(0, len(df.columns), col_chunksize)] for i in range(0, len(df), row_chunksize)]
+
         return cls(np.array(parts))
 
-    def get_indices(self, axis=0, old_blocks=None):
+    def get_indices(self, axis=0, index_func=None, old_blocks=None):
         """This gets the internal indices stored in the partitions.
 
         Note: These are the global indices of the object. This is mostly useful
@@ -352,14 +359,22 @@ class BlockPartitions(object):
 
         Args:
             axis: This axis to extract the labels. (0 - index, 1 - columns).
+            index_func: The function to be used to extract the function.
+            scale_index: True if we need to add the lengths of previous blocks,
+                False otherwise. This should be True if each block had the
+                index reset based on the length of that particular block,
+                otherwise it should be False.
             old_blocks: An optional previous object that this object was
                 created from. This is used to compute the correct offsets.
 
         Returns:
             A Pandas Index object.
         """
+        assert callable(index_func), \
+            "Must tell this function how to extract index"
+
         if axis == 0:
-            func = self.preprocess_func(lambda df: df.index)
+            func = self.preprocess_func(index_func)
             # We grab the first column of blocks and extract the indices
             new_indices = [idx.apply(func).get() for idx in self.partitions.T[0]]
             # This is important because sometimes we have resized the data. The new
@@ -370,7 +385,7 @@ class BlockPartitions(object):
             else:
                 cumulative_block_lengths = np.array(self.block_lengths).cumsum()
         else:
-            func = self.preprocess_func(lambda df: df.columns)
+            func = self.preprocess_func(index_func)
             new_indices = [idx.apply(func).get() for idx in self.partitions[0]]
 
             if old_blocks is not None:
@@ -379,18 +394,22 @@ class BlockPartitions(object):
                 cumulative_block_lengths = np.array(self.block_widths).cumsum()
 
         full_indices = new_indices[0]
-        for i in range(len(new_indices)):
-            # If the length is 0 there is nothing to append.
-            if i == 0 or len(new_indices[i]) == 0:
-                continue
-            # The try-except here is intended to catch issues where we are
-            # trying to get a string index out of the internal index.
-            try:
-                append_val = new_indices[i] + cumulative_block_lengths[i - 1]
-            except TypeError:
-                append_val = new_indices[i]
 
-            full_indices = full_indices.append(append_val)
+        if old_blocks is not None:
+            for i in range(len(new_indices)):
+                # If the length is 0 there is nothing to append.
+                if i == 0 or len(new_indices[i]) == 0:
+                    continue
+                # The try-except here is intended to catch issues where we are
+                # trying to get a string index out of the internal index.
+                try:
+                    append_val = new_indices[i] + cumulative_block_lengths[i - 1]
+                except TypeError:
+                    append_val = new_indices[i]
+
+                full_indices = full_indices.append(append_val)
+        else:
+            full_indices = full_indices.append(new_indices[1:])
 
         return full_indices
 
@@ -497,6 +516,16 @@ class BlockPartitions(object):
         """
         cls = type(self)
 
+        # Handling dictionaries has to be done differently, but we still want
+        # to figure out the partitions that need to be applied to, so we will
+        # store the dictionary in a separate variable and assign `indices` to
+        # the keys to handle it the same as we normally would.
+        if isinstance(indices, dict):
+            dict_indices = indices
+            indices = list(indices.keys())
+        else:
+            dict_indices = None
+
         if not isinstance(indices, list):
             indices = [indices]
 
@@ -507,16 +536,26 @@ class BlockPartitions(object):
         else:
             partitions_for_apply = self.partitions
 
-        if not keep_remaining:
-            # We are passing internal indices in here. In order for func to
-            # actually be able to use this information, it must be able to take in
-            # the internal indices. This might mean an iloc in the case of Pandas
-            # or some other way to index into the internal representation.
-            result = np.array([self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], internal_indices=partitions_dict[i]) for i in partitions_dict])
+        # We may have a command to perform different functions on different
+        # columns at the same time. We attempt to handle this as efficiently as
+        # possible here. Functions that use this in the dictionary format must
+        # accept a keyword argument `func_dict`.
+        if dict_indices is not None:
+            if not keep_remaining:
+                result = np.array([self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in partitions_dict])
+            else:
+                result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
         else:
-            # The difference here is that we modify a subset and return the
-            # remaining (non-updated) blocks in their original position.
-            result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], internal_indices=partitions_dict[i]) for i in range(len(partitions_for_apply))])
+            if not keep_remaining:
+                # We are passing internal indices in here. In order for func to
+                # actually be able to use this information, it must be able to take in
+                # the internal indices. This might mean an iloc in the case of Pandas
+                # or some other way to index into the internal representation.
+                result = np.array([self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], internal_indices=partitions_dict[i]) for i in partitions_dict])
+            else:
+                # The difference here is that we modify a subset and return the
+                # remaining (non-updated) blocks in their original position.
+                result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], internal_indices=partitions_dict[i]) for i in range(len(partitions_for_apply))])
 
         return cls(result.T) if not axis else cls(result)
 
@@ -542,6 +581,11 @@ class BlockPartitions(object):
             A new BlockPartitions object, the type of object that called this.
         """
         cls = type(self)
+        if isinstance(indices, dict):
+            dict_indices = indices
+            indices = list(indices.keys())
+        else:
+            dict_indices = None
 
         if not isinstance(indices, list):
             indices = [indices]
@@ -559,12 +603,22 @@ class BlockPartitions(object):
             partitions_for_apply = self.row_partitions
             partitions_for_remaining = self.partitions
 
-        if not keep_remaining:
-            # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in partitions_dict])
+        # We may have a command to perform different functions on different
+        # columns at the same time. We attempt to handle this as efficiently as
+        # possible here. Functions that use this in the dictionary format must
+        # accept a keyword argument `func_dict`.
+        if dict_indices is not None:
+            if not keep_remaining:
+                result = np.array([partitions_for_apply[i].apply(preprocessed_func, func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in partitions_dict])
+            else:
+                result = np.array([partitions_for_remaining[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(preprocessed_func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
         else:
-            # See notes in `apply_func_to_select_indices`
-            result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
+            if not keep_remaining:
+                # See notes in `apply_func_to_select_indices`
+                result = np.array([partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in partitions_dict])
+            else:
+                # See notes in `apply_func_to_select_indices`
+                result = np.array([partitions_for_remaining[i] if i not in partitions_dict else partitions_for_apply[i].apply(preprocessed_func, internal_indices=partitions_dict[i]) for i in range(len(partitions_for_remaining))])
 
         return cls(result.T) if not axis else cls(result)
 
@@ -591,6 +645,27 @@ class BlockPartitions(object):
         func = self.preprocess_func(func)
 
         result = np.array([partitions[i].apply(func, num_splits=cls._compute_num_partitions(), other_axis_partition=other_partitions[i]) for i in range(len(partitions))])
+        return cls(result) if axis else cls(result.T)
+
+    def manual_shuffle(self, axis, shuffle_func):
+        """Shuffle the partitions based on the `shuffle_func`.
+
+        Args:
+            axis:
+            shuffle_func:
+
+        Returns:
+             A new BlockPartitions object, the type of object that called this.
+        """
+        cls = type(self)
+
+        if axis:
+            partitions = self.row_partitions
+        else:
+            partitions = self.column_partitions
+
+        func = self.preprocess_func(shuffle_func)
+        result = np.array([part.shuffle(func, num_splits=cls._compute_num_partitions()) for part in partitions])
         return cls(result) if axis else cls(result.T)
 
     def __getitem__(self, key):

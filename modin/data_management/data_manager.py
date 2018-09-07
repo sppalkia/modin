@@ -4,8 +4,10 @@ from __future__ import print_function
 
 import numpy as np
 import pandas
+
+from pandas.compat import string_types
 from pandas.core.dtypes.cast import find_common_type
-from pandas.core.dtypes.common import _get_dtype_from_object
+from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like)
 
 from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
 from .partitioning.remote_partition import RayRemotePartition
@@ -64,20 +66,28 @@ class PandasDataManager(object):
 
     # END Index, columns, and dtypes objects
 
-    def compute_index(self, data_object):
+    def compute_index(self, axis, data_object, compute_diff=True):
         """Computes the index after a number of rows have been removed.
 
         Note: In order for this to be used properly, the indexes must not be
             changed before you compute this.
 
         Args:
+            axis: The axis to extract the index from.
             data_object: The new data object to extract the index from.
+            compute_diff: True to use `self` to compute the index from self
+                rather than data_object. This is used when the dimension of the
+                index may have changed, but the deleted rows/columns are
+                unknown
 
         Returns:
             A new pandas.Index object.
         """
-        new_indices = data_object.get_indices(axis=0, old_blocks=self.data)
-        return self.index[new_indices]
+        index_obj = self.index if not axis else self.columns
+        old_blocks = self.data if compute_diff else None
+        new_indices = data_object.get_indices(axis=axis, index_func=lambda df: pandas_index_extraction(df, axis), old_blocks=old_blocks)
+
+        return index_obj[new_indices] if compute_diff else new_indices
     # END Index and columns objects
 
     # Internal methods
@@ -286,12 +296,130 @@ class PandasDataManager(object):
         new_data = reindexed_self.inter_data_operation(1, lambda l, r: inter_data_op_builder(l, r, self_cols, other_cols, func), reindexed_other)
 
         return cls(new_data, joined_index, new_columns, None)
+
+    def _inter_df_op_handler(self, func, other, **kwargs):
+        """Helper method for inter-DataFrame and scalar operations"""
+        axis = kwargs.get("axis", 0)
+
+        if isinstance(other, type(self)):
+            return self.inter_manager_operations(other, "outer", lambda x, y: func(x, y, **kwargs))
+        else:
+            return self.scalar_operations(axis, other, lambda df: func(df, other, **kwargs))
+
+    def where(self, cond, other, **kwargs):
+        cls = type(self)
+
+        assert isinstance(cond, type(self)), \
+            "Must have the same DataManager subclass to perform this operation"
+
+        if isinstance(other, type(self)):
+            # Note: Currently we are doing this with two maps across the entire
+            # data. This can be done with a single map, but it will take a
+            # modification in the `BlockPartition` class.
+            # If this were in one pass it would be ~2x faster.
+            # TODO rewrite this to take one pass.
+            def where_builder_first_pass(cond, other, **kwargs):
+                return cond.where(cond, other, **kwargs)
+
+            def where_builder_second_pass(df, new_other, **kwargs):
+                return df.where(new_other == True, new_other, **kwargs)
+
+            # We are required to perform this reindexing on everything to
+            # shuffle the data together
+            reindexed_cond = cond.reindex(0, self.index).data
+            reindexed_other = other.reindex(0, self.index).data
+            reindexed_self = self.reindex(0, self.index).data
+
+            first_pass = reindexed_cond.inter_data_operation(1, lambda l, r: where_builder_first_pass(l, r, **kwargs), reindexed_other)
+            final_pass = reindexed_self.inter_data_operation(1, lambda l, r: where_builder_second_pass(l, r, **kwargs), first_pass)
+            return cls(final_pass, self.index, self.columns)
+        else:
+            axis = kwargs.get("axis", 0)
+
+            def where_builder_series(df, cond, other, **kwargs):
+                return df.where(cond, other, **kwargs)
+
+            reindexed_self = self.reindex(axis, self.index if not axis else self.columns).data
+            print(reindexed_self.to_pandas(False))
+            reindexed_cond = cond.reindex(axis, self.index if not axis else self.columns).data
+            new_data = reindexed_self.inter_data_operation(axis, lambda l, r: where_builder_series(l, r, other, **kwargs), reindexed_cond)
+            return cls(new_data, self.index, self.columns, None)
+
+    def update(self, other, **kwargs):
+        assert isinstance(other, type(self)), \
+            "Must have the same DataManager subclass to perform this operation"
+
+        def update_builder(df, other, **kwargs):
+            df.update(other, **kwargs)
+            return df
+
+        return self._inter_df_op_handler(update_builder, other, **kwargs)
+
+    def add(self, other, **kwargs):
+        #TODO: need to write a prepare_function for inter_df operations
+        func = pandas.DataFrame.add
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def div(self, other, **kwargs):
+        func = pandas.DataFrame.div
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def eq(self, other, **kwargs):
+        func = pandas.DataFrame.eq
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def floordiv(self, other, **kwargs):
+        func = pandas.DataFrame.floordiv
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def ge(self, other, **kwargs):
+        func = pandas.DataFrame.ge
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def gt(self, other, **kwargs):
+        func = pandas.DataFrame.gt
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def le(self, other, **kwargs):
+        func = pandas.DataFrame.le
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def lt(self, other, **kwargs):
+        func = pandas.DataFrame.lt
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def mod(self, other, **kwargs):
+        func = pandas.DataFrame.mod
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def mul(self, other, **kwargs):
+        func = pandas.DataFrame.mul
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def ne(self, other, **kwargs):
+        func = pandas.DataFrame.ne
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def pow(self, other, **kwargs):
+        func = pandas.DataFrame.pow
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def sub(self, other, **kwargs):
+        func = pandas.DataFrame.sub
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def truediv(self, other, **kwargs):
+        func = pandas.DataFrame.truediv
+        return self._inter_df_op_handler(func, other, **kwargs)
+
     # END Inter-Data operations
 
     # Single Manager scalar operations (e.g. add to scalar, list of scalars)
     def scalar_operations(self, axis, scalar, func):
         if isinstance(scalar, list):
-            return self.map_across_full_axis(axis, func)
+            cls = type(self)
+            new_data = self.map_across_full_axis(axis, func)
+            return cls(new_data, self.index, self.columns)
         else:
             return self.map_partitions(func)
     # END Single Manager scalar operations
@@ -559,7 +687,6 @@ class PandasDataManager(object):
         func = self._prepare_method(info_builder, **kwargs)
         return self.full_axis_reduce(func, 0)
 
-
     def first_valid_index(self):
 
         # It may be possible to incrementally check each partition, but this
@@ -638,6 +765,9 @@ class PandasDataManager(object):
     # END Column/Row partitions reduce operations
 
     # Map across rows/columns
+    # These operations require some global knowledge of the full column/row
+    # that is being operated on. This means that we have to put all of that
+    # data in the same place.
     def map_across_full_axis(self, axis, func):
         return self.data.map_across_full_axis(axis, func)
 
@@ -658,7 +788,7 @@ class PandasDataManager(object):
         func = self._prepare_method(query_builder, **kwargs)
         new_data = self.map_across_full_axis(1, func)
         # Query removes rows, so we need to update the index
-        new_index = self.compute_index(new_data)
+        new_index = self.compute_index(0, new_data, True)
 
         return cls(new_data, new_index, self.columns, self.dtypes)
 
@@ -688,6 +818,33 @@ class PandasDataManager(object):
             columns = columns_copy.columns
 
         return cls(new_data, self.index, columns, None)
+
+    def eval(self, expr, **kwargs):
+        cls = type(self)
+        columns = self.columns
+
+        def eval_builder(df, **kwargs):
+            df.columns = columns
+            result = df.eval(expr, inplace=False, **kwargs)
+            # If result is a series, expr was not an assignment expression.
+            if not isinstance(result, pandas.Series):
+                result.columns = pandas.RangeIndex(0, len(result.columns))
+            return result
+
+        func = self._prepare_method(eval_builder, **kwargs)
+        new_data = self.map_across_full_axis(1, func)
+
+        # eval can update the columns, so we must update columns
+        columns_copy = pandas.DataFrame(columns=columns)
+        columns_copy = columns_copy.eval(expr, inplace=False, **kwargs)
+        if isinstance(columns_copy, pandas.Series):
+            # To create a data manager, we need the 
+            # columns to be in a list-like
+            columns = list(columns_copy.name)
+        else:
+            columns = columns_copy.columns
+
+        return cls(new_data, self.index, columns)
 
     def quantile_for_list_of_values(self, **kwargs):
         cls = type(self)
@@ -788,10 +945,20 @@ class PandasDataManager(object):
         cls = type(self)
 
         axis = kwargs.get("axis", 0)
-        value = kwargs.get("value", None)
+        value = kwargs.pop("value", None)
 
         if isinstance(value, dict):
-            return
+            if axis == 0:
+                index = self.columns
+            else:
+                index = self.index
+            value = {idx: value[key] for key in value for idx in index.get_indexer_for([key])}
+
+            def fillna_dict_builder(df, func_dict={}):
+                return df.fillna(value=func_dict, **kwargs)
+
+            new_data = self.data.apply_func_to_select_indices(axis, fillna_dict_builder, value, keep_remaining=True)
+            return cls(new_data, self.index, self.columns)
         else:
             func = self._prepare_method(pandas.DataFrame.fillna, **kwargs)
             new_data = self.map_across_full_axis(axis, func)
@@ -799,12 +966,12 @@ class PandasDataManager(object):
 
     def describe(self, **kwargs):
         cls = type(self)
-
         axis = 0
+
         func = self._prepare_method(pandas.DataFrame.describe, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        new_index = new_data.get_indices(axis=0)
-        new_columns = self.columns[new_data.get_indices(axis=1, old_blocks=self.data)]
+        new_index = self.compute_index(0, new_data, False)
+        new_columns = self.compute_index(1, new_data, True)
         new_dtypes = pd.Series([np.float64 for _ in new_columns], index=new_columns)
 
         return cls(new_data, new_index, new_columns, new_dtypes)
@@ -813,15 +980,28 @@ class PandasDataManager(object):
         cls = type(self)
 
         axis = kwargs.get("axis", 0)
+
         func = self._prepare_method(pandas.DataFrame.rank, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        if axis:
-            new_columns = self.columns[new_data.get_indices(axis=1, old_blocks=self.data)]
+
+        # Since we assume no knowledge of internal state, we get the columns
+        # from the internal partitions.
+        if kwargs.get("numeric_only", False):
+            new_columns = self.compute_index(1, new_data, True)
         else:
             new_columns = self.columns
         new_dtypes = pd.Series([np.float64 for _ in new_columns], index=new_columns)
-
         return cls(new_data, self.index, new_columns, new_dtypes)
+
+    def diff(self, **kwargs):
+        cls = type(self)
+
+        axis = kwargs.get("axis", 0)
+
+        func = self._prepare_method(pandas.DataFrame.diff, **kwargs)
+        new_data = self.map_across_full_axis(axis, func)
+
+        return cls(new_data, self.index, self.columns, None)
     # END Map across rows/columns
 
     # Head/Tail/Front/Back
@@ -1045,47 +1225,128 @@ class PandasDataManager(object):
     # There is a wide range of behaviors that are supported, so a lot of the
     # logic can get a bit convoluted.
     def apply(self, func, axis, *args, **kwargs):
-
         if callable(func):
             return self._callable_func(func, axis, *args, **kwargs)
+        elif isinstance(func, dict):
+            return self._dict_func(func, axis, *args, **kwargs)
+        elif is_list_like(func):
+            return self._list_like_func(func, axis, *args, **kwargs)
         else:
             pass
 
-    def _callable_func(self, func, axis, *args, **kwargs):
+    def _post_process_apply(self, result_data, axis):
         cls = type(self)
+        try:
+            index = self.compute_index(0, result_data, True)
+        except IndexError:
+            index = self.compute_index(0, result_data, False)
+        try:
+            columns = self.compute_index(1, result_data, True)
+        except IndexError:
+            columns = self.compute_index(1, result_data, False)
+
+        # `apply` and `aggregate` can return a Series or a DataFrame object,
+        # and since we need to handle each of those differently, we have to add
+        # this logic here.
+        if len(columns) == 0:
+            series_result = result_data.to_pandas(False)
+            series_result.index = index
+            return series_result
+
+        return cls(result_data, index, columns, None)
+
+    def _dict_func(self, func, axis, *args, **kwargs):
+        if "axis" not in kwargs:
+            kwargs["axis"] = axis
+
+        if axis == 0:
+            index = self.columns
+        else:
+            index = self.index
+
+        func = {idx: func[key] for key in func for idx in index.get_indexer_for([key])}
+
+        def dict_apply_builder(df, func_dict={}):
+            return df.apply(func_dict, *args, **kwargs)
+
+        result_data = self.data.apply_func_to_select_indices_along_full_axis(axis, dict_apply_builder, func, keep_remaining=False)
+
+        full_result = self._post_process_apply(result_data, axis)
+
+        # The columns can get weird because we did not broadcast them to the
+        # partitions and we do not have any guarantee that they are correct
+        # until here. Fortunately, the keys of the function will tell us what
+        # the columns are.
+        if isinstance(full_result, pandas.Series):
+            full_result.index = [self.columns[idx] for idx in func]
+        return full_result
+
+    def _list_like_func(self, func, axis, *args, **kwargs):
+        cls = type(self)
+        func_prepared = self._prepare_method(lambda df: df.apply(func, *args, **kwargs))
+        new_data = self.map_across_full_axis(axis, func_prepared)
+
+        # When the function is list-like, the function names become the index
+        new_index = [f if isinstance(f, string_types) else f.__name__ for f in func]
+        return cls(new_data, new_index, self.columns)
+
+    def _callable_func(self, func, axis, *args, **kwargs):
 
         def callable_apply_builder(df, func, axis, index, *args, **kwargs):
             if not axis:
                 df.index = index
+                df.columns = pandas.RangeIndex(len(df.columns))
             else:
                 df.columns = index
+                df.index = pandas.RangeIndex(len(df.index))
 
-            result = df.agg(func, *args, **kwargs)
+            result = df.apply(func, axis=axis, *args, **kwargs)
             return result
 
         index = self.index if not axis else self.columns
 
         func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
         result_data = self.map_across_full_axis(axis, func_prepared)
-        return result_data
-        if not axis:
-            try:
-                index = result_data.get_indices(axis)
-                columns = result_data.get_indices(axis ^ 1)
-            except Exception:
-                series_result = result_data.to_pandas(False)
-                series_result.index = self.columns
-                return series_result
-        else:
-            try:
-                index = result_data.get_indices(axis ^ 1)
-                columns = result_data.get_indices(axis)
-            except Exception:
-                series_result = result_data.to_pandas(False)
-                series_result.index = self.index
-                return series_result
+        return self._post_process_apply(result_data, axis)
+    #END UDF
 
-        return cls(result_data, index, columns, None)
+    # Manual Partitioning methods (e.g. merge, groupby)
+    # These methods require some sort of manual partitioning due to their
+    # nature. They require certain data to exist on the same partition, and
+    # after the shuffle, there should be only a local map required.
+    def _manual_repartition(self, axis, repartition_func, **kwargs):
+        """This method applies all manual partitioning functions.
+
+        :param axis:
+        :param repartition_func:
+
+        Returns:
+            A `BlockPartitions` object.
+        """
+        func = self._prepare_method(repartition_func, **kwargs)
+        return self.data.manual_shuffle(axis, func)
+
+    def merge(self, right, on, left_on, right_on, left_index, right_index, how, **kwargs):
+
+        if left_index:
+            index = self.index.sort_values()
+            uniques = index.unique()
+
+            if len(uniques) == len(index):
+
+
+            def manual_partition_func(df, num_splits=None, **kwargs):
+                df.index = index
+                uniques = index.unique()
+                if len(uniques) == len(index):
+                    df.sort_index(inplace=True)
+
+                elif len(uniques) < num_splits:
+        elif on is not None:
+            pass
+        else:
+            # `left_on` is None
+            pass
 
 
 class RayPandasDataManager(PandasDataManager):
@@ -1094,3 +1355,13 @@ class RayPandasDataManager(PandasDataManager):
     def _from_old_block_partitions(cls, blocks, index, columns):
         blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
         return PandasDataManager(RayBlockPartitions(blocks), index, columns)
+
+
+def pandas_index_extraction(df, axis):
+    if not axis:
+        return df.index
+    else:
+        try:
+            return df.columns
+        except AttributeError:
+            return pandas.Index([])

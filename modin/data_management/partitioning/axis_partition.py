@@ -50,6 +50,19 @@ class AxisPartition(object):
         """
         raise NotImplementedError("Must be implemented in children classes")
 
+    def shuffle(self, func, num_splits=None, **kwargs):
+        """Shuffle the order of the data in this axis based on the `func`.
+
+        Args:
+            func:
+            num_splits:
+            kwargs:
+
+        Returns:
+             A list of `RemotePartition` objects.
+        """
+        raise NotImplementedError("Must be implemented in children classes")
+
 
 class RayAxisPartition(AxisPartition):
 
@@ -78,6 +91,21 @@ class RayAxisPartition(AxisPartition):
             return [RayRemotePartition(obj) for obj in deploy_ray_func_between_two_axis_partitions._submit(args=(self.axis, func, num_splits, len(self.list_of_blocks), kwargs) + tuple(self.list_of_blocks + other_axis_partition.list_of_blocks), num_return_vals=num_splits)]
 
         return [RayRemotePartition(obj) for obj in deploy_ray_axis_func._submit(args=(self.axis, func, num_splits, kwargs, *self.list_of_blocks), num_return_vals=num_splits)]
+
+    def shuffle(self, func, num_splits=None, **kwargs):
+        """Shuffle the order of the data in this axis based on the `func`.
+
+        Extends `AxisPartition.shuffle`.
+
+        :param func:
+        :param num_splits:
+        :param kwargs:
+        :return:
+        """
+        if num_splits is None:
+            num_splits = len(self.list_of_blocks)
+
+        return [RayRemotePartition(obj) for obj in deploy_ray_shuffle_func._submit(args=(self.axis, func, num_splits, kwargs, *self.list_of_blocks), num_return_vals=num_splits)]
 
 
 class RayColumnPartition(RayAxisPartition):
@@ -160,3 +188,24 @@ def deploy_ray_func_between_two_axis_partitions(axis, func, num_splits, len_of_l
 
     result = func(lt_frame, rt_frame, **kwargs)
     return split_result_of_axis_func_pandas(axis, num_splits, result)
+
+
+@ray.remote
+def deploy_ray_shuffle_func(axis, func, numsplits, kwargs, *partitions):
+    """Deploy a function that defines the partitions along this axis.
+
+    Args:
+        axis:
+        func:
+        numsplits:
+        kwargs:
+        partitions:
+
+    Returns:
+        A list of Pandas DataFrames.
+    """
+    dataframe = pandas.concat(partitions, axis=axis, copy=False)
+    result = func(dataframe, numsplits=numsplits, **kwargs)
+
+    assert isinstance(result, list)
+    return result

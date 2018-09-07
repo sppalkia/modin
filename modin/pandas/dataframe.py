@@ -634,8 +634,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the applied addition.
         """
-        return self._operator_helper(pandas.DataFrame.add, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.add(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def agg(self, func, axis=0, *args, **kwargs):
         return self.aggregate(func, axis, *args, **kwargs)
@@ -671,10 +679,8 @@ class DataFrame(object):
             raise NotImplementedError(
                 "To contribute to Pandas on Ray, please visit "
                 "github.com/modin-project/modin.")
-        elif is_list_like(arg):
+        elif is_list_like(arg) or callable(arg):
             return self.apply(arg, axis=_axis, args=args, **kwargs)
-        elif callable(arg):
-            self._callable_function(arg, _axis, *args, **kwargs)
         else:
             # TODO Make pandas error
             raise ValueError("type {} is not callable".format(type(arg)))
@@ -699,106 +705,6 @@ class DataFrame(object):
             raise NotImplementedError("Numpy aggregates not yet supported.")
 
         raise ValueError("{} is an unknown string function".format(func))
-
-    def _callable_function(self, func, axis, *args, **kwargs):
-        kwargs['axis'] = axis
-
-        def agg_helper(df, arg, index, columns, *args, **kwargs):
-            df.index = index
-            df.columns = columns
-            is_transform = kwargs.pop('is_transform', False)
-            new_df = df.agg(arg, *args, **kwargs)
-
-            is_series = False
-            index = None
-            columns = None
-
-            if isinstance(new_df, pandas.Series):
-                is_series = True
-            else:
-                columns = new_df.columns
-                index = new_df.index
-                new_df.columns = pandas.RangeIndex(0, len(new_df.columns))
-                new_df.reset_index(drop=True, inplace=True)
-
-            if is_transform:
-                if is_scalar(new_df) or len(new_df) != len(df):
-                    raise ValueError("transforms cannot produce "
-                                     "aggregated results")
-
-            return is_series, new_df, index, columns
-
-        if axis == 0:
-            index = self.index
-            columns = [
-                self._col_metadata.partition_series(i).index
-                for i in range(len(self._col_partitions))
-            ]
-
-            remote_result = \
-                [_deploy_func._submit(args=(
-                    lambda df: agg_helper(df,
-                                          func,
-                                          index,
-                                          cols,
-                                          *args,
-                                          **kwargs),
-                                      part), num_return_vals=4)
-                 for cols, part in zip(columns, self._col_partitions)]
-
-        if axis == 1:
-            indexes = [
-                self._row_metadata.partition_series(i).index
-                for i in range(len(self._row_partitions))
-            ]
-            columns = self.columns
-
-            remote_result = \
-                [_deploy_func._submit(args=(
-                    lambda df: agg_helper(df,
-                                          func,
-                                          index,
-                                          columns,
-                                          *args,
-                                          **kwargs),
-                                      part), num_return_vals=4)
-                 for index, part in zip(indexes, self._row_partitions)]
-
-        # This magic transposes the list comprehension returned from remote
-        is_series, new_parts, index, columns = \
-            [list(t) for t in zip(*remote_result)]
-
-        # This part is because agg can allow returning a Series or a
-        # DataFrame, and we have to determine which here. Shouldn't add
-        # too much to latency in either case because the booleans can
-        # be returned immediately
-        is_series = ray.get(is_series)
-        if all(is_series):
-            new_series = pandas.concat(ray.get(new_parts), copy=False)
-            new_series.index = self.columns if axis == 0 else self.index
-            return new_series
-        # This error is thrown when some of the partitions return Series and
-        # others return DataFrames. We do not allow mixed returns.
-        elif any(is_series):
-            raise ValueError("no results.")
-        # The remaining logic executes when we have only DataFrames in the
-        # remote objects. We build a Ray DataFrame from the Pandas partitions.
-        elif axis == 0:
-            new_index = ray.get(index[0])
-            # This does not handle the Multi Index case
-            new_columns = ray.get(columns)
-            new_columns = new_columns[0].append(new_columns[1:])
-
-            return DataFrame(
-                col_partitions=new_parts, columns=new_columns, index=new_index)
-        else:
-            new_columns = ray.get(columns[0])
-            # This does not handle the Multi Index case
-            new_index = ray.get(index)
-            new_index = new_index[0].append(new_index[1:])
-
-            return DataFrame(
-                row_partitions=new_parts, columns=new_columns, index=new_index)
 
     def align(self,
               other,
@@ -932,51 +838,18 @@ class DataFrame(object):
                     'duplicate column names not supported with apply().',
                     FutureWarning,
                     stacklevel=2)
-            has_list = list in map(type, func.values())
-            part_ind_tuples = [(self._col_metadata[key], key) for key in func]
-
-            if has_list:
-                # if input dict has a list, the function to apply must wrap
-                # single functions in lists as well to get the desired output
-                # format
-                result = [_deploy_func.remote(
-                    lambda df: df.iloc[:, ind].apply(
-                        func[key] if is_list_like(func[key])
-                        else [func[key]]),
-                    self._col_partitions[part])
-                    for (part, ind), key in part_ind_tuples]
-                return pandas.concat(ray.get(result), axis=1, copy=False)
-            else:
-                result = [
-                    _deploy_func.remote(
-                        lambda df: df.iloc[:, ind].apply(func[key]),
-                        self._col_partitions[part])
-                    for (part, ind), key in part_ind_tuples
-                ]
-                return pandas.Series(ray.get(result), index=func.keys())
-
         elif is_list_like(func):
             if axis == 1:
                 raise TypeError("(\"'list' object is not callable\", "
                                 "'occurred at index {0}'".format(
                                     self.index[0]))
-            # TODO: some checking on functions that return Series or Dataframe
-            new_cols = _map_partitions(lambda df: df.apply(func),
-                                       self._col_partitions)
+        elif not callable(func):
+            return
 
-            # resolve function names for the DataFrame index
-            new_index = [
-                f_name if isinstance(f_name, string_types) else f_name.__name__
-                for f_name in func
-            ]
-            return DataFrame(
-                col_partitions=new_cols,
-                columns=self.columns,
-                index=new_index,
-                col_metadata=self._col_metadata)
-        elif callable(func):
-            # return self._callable_function(func, axis=axis, *args, **kwds)
-            return self._data_manager.apply(func, axis, *args, **kwds)
+        data_manager = self._data_manager.apply(func, axis, *args, **kwds)
+        if isinstance(data_manager, pandas.Series):
+            return data_manager
+        return DataFrame(data_manager=data_manager)
 
     def as_blocks(self, copy=True):
         raise NotImplementedError(
@@ -1263,19 +1136,7 @@ class DataFrame(object):
         Returns:
             DataFrame with the diff applied
         """
-        axis = pandas.DataFrame()._get_axis_number(axis)
-        partitions = (self._col_partitions
-                      if axis == 0 else self._row_partitions)
-
-        result = _map_partitions(
-            lambda df: df.diff(axis=axis, periods=periods), partitions)
-
-        if (axis == 1):
-            return DataFrame(
-                row_partitions=result, columns=self.columns, index=self.index)
-        if (axis == 0):
-            return DataFrame(
-                col_partitions=result, columns=self.columns, index=self.index)
+        return DataFrame(data_manager=self._data_manager.diff(periods=periods, axis=axis))
 
     def div(self, other, axis='columns', level=None, fill_value=None):
         """Divides this DataFrame against another DataFrame/Series/scalar.
@@ -1289,8 +1150,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Divide applied.
         """
-        return self._operator_helper(pandas.DataFrame.div, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.div(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def divide(self, other, axis='columns', level=None, fill_value=None):
         """Synonym for div.
@@ -1410,7 +1279,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.eq, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.eq(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def equals(self, other):
         """
@@ -1579,8 +1456,8 @@ class DataFrame(object):
                   .format(expecting=expecting, method=method)
             raise ValueError(msg)
 
-        if isinstance(value, (pandas.Series, dict)):
-            raise NotImplementedError("value as a Series or dictionary not yet supported.")
+        if isinstance(value, pandas.Series):
+            raise NotImplementedError("value as a Series not yet supported.")
 
         new_manager = self._data_manager.fillna(value=value, method=method, axis=axis, inplace=False, limit=limit, downcast=downcast, **kwargs)
 
@@ -1659,8 +1536,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Divide applied.
         """
-        return self._operator_helper(pandas.DataFrame.floordiv, other, axis,
-                                     level, fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.floordiv(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     @classmethod
     def from_csv(self,
@@ -1711,7 +1596,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.ge, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.ge(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def get(self, key, default=None):
         """Get item from object for given key (DataFrame column, Panel
@@ -1769,7 +1662,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.gt, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.gt(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def head(self, n=5):
         """Get the first n rows of the DataFrame.
@@ -2190,7 +2091,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.le, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.le(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def lookup(self, row_labels, col_labels):
         raise NotImplementedError(
@@ -2208,7 +2117,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.lt, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.lt(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def mad(self, axis=None, skipna=None, level=None):
         raise NotImplementedError(
@@ -2526,8 +2443,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Mod applied.
         """
-        return self._operator_helper(pandas.DataFrame.mod, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.mod(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def mode(self, axis=0, numeric_only=False):
         """Perform mode across the DataFrame.
@@ -2555,8 +2480,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Multiply applied.
         """
-        return self._operator_helper(pandas.DataFrame.mul, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.mul(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def multiply(self, other, axis='columns', level=None, fill_value=None):
         """Synonym for mul.
@@ -2583,7 +2516,15 @@ class DataFrame(object):
         Returns:
             A new DataFrame filled with Booleans.
         """
-        return self._operator_helper(pandas.DataFrame.ne, other, axis, level)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.ne(other=other,
+                                             axis=axis,
+                                             level=level)
+        return self._create_dataframe_from_manager(new_manager)
 
     def nlargest(self, n, columns, keep='first'):
         raise NotImplementedError(
@@ -2728,8 +2669,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Pow applied.
         """
-        return self._operator_helper(pandas.DataFrame.pow, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.pow(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def prod(self,
              axis=None,
@@ -2879,7 +2828,7 @@ class DataFrame(object):
         Args:
             axis (int): 0 or 'index' for row-wise,
                         1 or 'columns' for column-wise
-            interpolation: {'average', 'min', 'max', 'first', 'dense'}
+            method: {'average', 'min', 'max', 'first', 'dense'}
                 Specifies which method to use for equal vals
             numeric_only (boolean)
                 Include only float, int, boolean data.
@@ -3600,86 +3549,26 @@ class DataFrame(object):
         if not is_list_like(by):
             by = [by]
 
+        # Currently, sort_values will just reindex based on the sorted values.
+        # TODO create a more efficient way to sort
         if axis == 0:
-            broadcast_value_dict = {str(col): self[col] for col in by}
-            broadcast_values = pandas.DataFrame(broadcast_value_dict)
+            broadcast_value_dict = {col: self[col] for col in by}
+            broadcast_values = pandas.DataFrame(broadcast_value_dict, index=self.index)
+
+            new_index = broadcast_values.sort_values(by=by, axis=axis, ascending=ascending, kind=kind).index
+            return self.reindex(index=new_index)
         else:
-            broadcast_value_list = [
-                to_pandas(self[row::len(self.index)]) for row in by
-            ]
+            broadcast_value_list = [to_pandas(self[row::len(self.index)]) for row in by]
 
             index_builder = list(zip(broadcast_value_list, by))
-
-            for row, idx in index_builder:
-                row.index = [str(idx)]
 
             broadcast_values = \
                 pandas.concat([row for row, idx in index_builder], copy=False)
 
-        # We are converting the by to string here so that we don't have a
-        # collision with the RangeIndex on the inner frame. It is cheap and
-        # gaurantees that we sort by the correct column.
-        by = [str(col) for col in by]
+            broadcast_values.columns = self.columns
+            new_columns = broadcast_values.sort_values(by=by, axis=axis, ascending=ascending, kind=kind).columns
 
-        args = (by, axis, ascending, False, kind, na_position)
-
-        def _sort_helper(df, broadcast_values, axis, *args):
-            """Sorts the data on a partition.
-
-            Args:
-                df: The DataFrame to sort.
-                broadcast_values: The by DataFrame to use for the sort.
-                axis: The axis to sort over.
-                args: The args for the sort.
-
-            Returns:
-                 A new sorted DataFrame.
-            """
-            if axis == 0:
-                broadcast_values.index = df.index
-                names = broadcast_values.columns
-            else:
-                broadcast_values.columns = df.columns
-                names = broadcast_values.index
-
-            return pandas.concat([df, broadcast_values], axis=axis ^ 1,
-                                 copy=False).sort_values(*args) \
-                .drop(names, axis=axis ^ 1)
-
-        if axis == 0:
-            new_column_partitions = _map_partitions(
-                lambda df: _sort_helper(df, broadcast_values, axis, *args),
-                self._col_partitions)
-
-            new_row_partitions = None
-            new_columns = self.columns
-
-            # This is important because it allows us to get the axis that we
-            # aren't sorting over. We need the order of the columns/rows and
-            # this will provide that in the return value.
-            new_index = broadcast_values.sort_values(*args).index
-        else:
-            new_row_partitions = _map_partitions(
-                lambda df: _sort_helper(df, broadcast_values, axis, *args),
-                self._row_partitions)
-
-            new_column_partitions = None
-            new_columns = broadcast_values.sort_values(*args).columns
-            new_index = self.index
-
-        if inplace:
-            self._update_inplace(
-                row_partitions=new_row_partitions,
-                col_partitions=new_column_partitions,
-                columns=new_columns,
-                index=new_index)
-        else:
-            return DataFrame(
-                row_partitions=new_row_partitions,
-                col_partitions=new_column_partitions,
-                columns=new_columns,
-                index=new_index,
-                dtypes_cache=self._dtypes_cache)
+            return self.reindex(columns=new_columns)
 
     def sortlevel(self,
                   level=0,
@@ -3740,8 +3629,16 @@ class DataFrame(object):
         Returns:
              A new DataFrame with the subtraciont applied.
         """
-        return self._operator_helper(pandas.DataFrame.sub, other, axis, level,
-                                     fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.sub(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def subtract(self, other, axis='columns', level=None, fill_value=None):
         """Alias for sub.
@@ -4166,8 +4063,16 @@ class DataFrame(object):
         Returns:
             A new DataFrame with the Divide applied.
         """
-        return self._operator_helper(pandas.DataFrame.truediv, other, axis,
-                                     level, fill_value)
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.truediv(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def truncate(self, before=None, after=None, axis=None, copy=True):
         raise NotImplementedError(
@@ -4223,11 +4128,8 @@ class DataFrame(object):
         if not isinstance(other, DataFrame):
             other = DataFrame(other)
 
-        def update_helper(x, y):
-            x.update(y, join, overwrite, filter_func, False)
-            return x
-
-        self._inter_df_op_helper(update_helper, other, join, None, inplace=True)
+        data_manager = self._data_manager.update(other._data_manager, join=join, overwrite=overwrite, filter_func=filter_func, raise_conflict=raise_conflict)
+        self._update_inplace(new_manager=data_manager)
 
     def var(self,
             axis=None,
@@ -4305,68 +4207,21 @@ class DataFrame(object):
                                  "self")
             cond = DataFrame(cond, index=self.index, columns=self.columns)
 
-        zipped_partitions = self._copartition(cond, self.index)
-        args = (False, axis, level, errors, try_cast, raise_on_error)
-
         if isinstance(other, DataFrame):
-            other_zipped = (v for k, v in self._copartition(other, self.index))
+            other = other._data_manager
 
-            new_partitions = [
-                _where_helper.remote(k, v, next(other_zipped), self.columns,
-                                     cond.columns, other.columns, *args)
-                for k, v in zipped_partitions
-            ]
-
-        # Series has to be treated specially because we're operating on row
-        # partitions from here on.
         elif isinstance(other, pandas.Series):
-            if axis == 0:
-                # Pandas determines which index to use based on axis.
-                other = other.reindex(self.index)
-                other.index = pandas.RangeIndex(len(other))
-
-                # Since we're working on row partitions, we have to partition
-                # the Series based on the partitioning of self (since both
-                # self and cond are co-partitioned by self.
-                other_builder = []
-                for length in self._row_metadata._lengths:
-                    other_builder.append(other[:length])
-                    other = other[length:]
-                    # Resetting the index here ensures that we apply each part
-                    # to the correct row within the partitions.
-                    other.index = pandas.RangeIndex(len(other))
-
-                other = (obj for obj in other_builder)
-
-                new_partitions = [
-                    _where_helper.remote(k, v, next(other, pandas.Series()),
-                                         self.columns, cond.columns, None,
-                                         *args) for k, v in zipped_partitions
-                ]
-            else:
-                other = other.reindex(self.columns)
-                new_partitions = [
-                    _where_helper.remote(k, v, other, self.columns,
-                                         cond.columns, None, *args)
-                    for k, v in zipped_partitions
-                ]
+            other = other.reindex(self.index if not axis else self.columns)
 
         else:
-            new_partitions = [
-                _where_helper.remote(k, v, other, self.columns, cond.columns,
-                                     None, *args) for k, v in zipped_partitions
-            ]
+            index = self.index if not axis else self.columns
+            other = pandas.Series(other, index=index)
 
+        data_manager = self._data_manager.where(cond._data_manager, other, axis=axis, level=level)
         if inplace:
-            self._update_inplace(
-                row_partitions=new_partitions,
-                row_metadata=self._row_metadata,
-                col_metadata=self._col_metadata)
+            self._update_inplace(new_manager=data_manager)
         else:
-            return DataFrame(
-                row_partitions=new_partitions,
-                row_metadata=self._row_metadata,
-                col_metadata=self._col_metadata)
+            return DataFrame(data_manager=data_manager)
 
     def xs(self, key, axis=0, level=None, drop_level=True):
         raise NotImplementedError(
@@ -4776,72 +4631,20 @@ class DataFrame(object):
         from .indexing import _iLoc_Indexer
         return _iLoc_Indexer(self)
 
-    def _copartition(self, other, new_index):
-        """Colocates the values of other with this for certain operations.
-
-        NOTE: This method uses the indexes of each DataFrame to order them the
-            same. This operation does an implicit shuffling of data and zips
-            the two DataFrames together to be operated on.
-
-        Args:
-            other: The other DataFrame to copartition with.
-
-        Returns:
-            Two new sets of partitions, copartitioned and zipped.
-        """
-        # Put in the object store so they aren't serialized each iteration.
-        old_self_index = ray.put(self.index)
-        new_index = ray.put(new_index)
-        old_other_index = ray.put(other.index)
-
-        new_num_partitions = max(
-            len(self._block_partitions.T), len(other._block_partitions.T))
-
-        new_partitions_self = \
-            np.array([_reindex_helper._submit(
-                args=tuple([old_self_index, new_index, 1,
-                            new_num_partitions] + block.tolist()),
-                num_return_vals=new_num_partitions)
-                for block in self._block_partitions.T]).T
-
-        new_partitions_other = \
-            np.array([_reindex_helper._submit(
-                args=tuple([old_other_index, new_index, 1,
-                            new_num_partitions] + block.tolist()),
-                num_return_vals=new_num_partitions)
-                for block in other._block_partitions.T]).T
-
-        return zip(new_partitions_self, new_partitions_other)
-
-    def _operator_helper(self, func, other, axis, level, *args):
-        """Helper method for inter-DataFrame and scalar operations"""
-        if isinstance(other, DataFrame):
-            return self._inter_df_op_helper(
-                lambda x, y: func(x, y, axis, level, *args), other, "outer",
-                level)
-        else:
-            return self._single_df_op_helper(
-                lambda df: func(df, other, axis, level, *args), other, axis,
-                level)
-
-    def _inter_df_op_helper(self, func, other, how, level, inplace=False):
-        if level is not None:
-            raise NotImplementedError("Mutlilevel index not yet supported "
-                                      "in Pandas on Ray")
-        new_manager = self._data_manager.inter_manager_operations(other._data_manager, how, func)
-
+    def _create_dataframe_from_manager(self, new_manager, inplace=False):
+        """Returns or updates a DataFrame given new data_manager"""
         if not inplace:
             return DataFrame(data_manager=new_manager)
         else:
             self._update_inplace(new_manager=new_manager)
 
-    def _single_df_op_helper(self, func, other, axis, level):
-        if level is not None:
-            raise NotImplementedError("Multilevel index not yet supported "
-                                      "in Pandas on Ray")
+    def _validate_other(self, other, axis):
+        """Helper method to check validity of other in inter-df operations"""
         axis = pandas.DataFrame()._get_axis_number(axis)
 
-        if is_list_like(other):
+        if isinstance(other, DataFrame):
+            return other._data_manager
+        elif is_list_like(other):
             if axis == 0:
                 if len(other) != len(self.index):
                     raise ValueError(
@@ -4852,8 +4655,8 @@ class DataFrame(object):
                     raise ValueError(
                         "Unable to coerce to Series, length must be {0}: "
                         "given {1}".format(len(self.columns), len(other)))
+        return other
 
-        return DataFrame(data_manager=self._data_manager.scalar_operations(axis, other, func))
 
 
 @ray.remote
@@ -4871,27 +4674,3 @@ def _merge_columns(left_columns, right_columns, *args):
     return pandas.DataFrame(columns=left_columns, index=[0], dtype='uint8') \
         .merge(pandas.DataFrame(columns=right_columns, index=[0],
                                 dtype='uint8'), *args).columns
-
-
-@ray.remote
-def _where_helper(left, cond, other, left_columns, cond_columns, other_columns,
-                  *args):
-
-    left = pandas.concat(ray.get(left.tolist()), axis=1, copy=False)
-    # We have to reset the index and columns here because we are coming
-    # from blocks and the axes are set according to the blocks. We have
-    # already correctly copartitioned everything, so there's no
-    # correctness problems with doing this.
-    left.reset_index(inplace=True, drop=True)
-    left.columns = left_columns
-
-    cond = pandas.concat(ray.get(cond.tolist()), axis=1, copy=False)
-    cond.reset_index(inplace=True, drop=True)
-    cond.columns = cond_columns
-
-    if isinstance(other, np.ndarray):
-        other = pandas.concat(ray.get(other.tolist()), axis=1, copy=False)
-        other.reset_index(inplace=True, drop=True)
-        other.columns = other_columns
-
-    return left.where(cond, other, *args)
