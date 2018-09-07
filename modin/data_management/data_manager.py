@@ -1002,21 +1002,27 @@ class PandasDataManager(object):
     def astype(self, col_dtypes, errors='raise', **kwargs):
         cls = type(self)
 
-        print(col_dtypes)
         # Group the indicies to update together and create new dtypes series
         dtype_indices = dict()
-        new_dtypes = self.dtypes
         columns = col_dtypes.keys()
+        new_dtypes = self.dtypes.copy()
         numeric_indices = list(self.columns.get_indexer_for(columns))
         for i, column in enumerate(columns):
-            if col_dtypes[column] not in col_dtypes.keys():
-                dtype_indices[col_dtypes[column]] = [numeric_indices[i]]
+            dtype = col_dtypes[column]
+            if dtype in dtype_indices.keys():
+                dtype_indices[dtype].append(numeric_indices[i])
             else:
-                dtype_indices[col_dtypes[column]].append(numeric_indices[i])
-            new_dtypes[column] = col_dtypes[column]
+                dtype_indices[dtype] = [numeric_indices[i]]
+            new_dtype = np.dtype(dtype)
+            if dtype != np.int32 and new_dtype == np.int32:
+                new_dtype = np.int64
+            elif dtype != np.float32 and new_dtype == np.float32:
+                new_dtype = np.float64
+            new_dtypes[column] = new_dtype
 
         new_data = self.data
         for dtype in dtype_indices.keys():
+            resulting_dtype = None
 
             def astype(df, internal_indices=[]):
                 block_dtypes = dict()

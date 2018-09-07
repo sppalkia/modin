@@ -1028,10 +1028,9 @@ class DataFrame(object):
             for column in self._data_manager.columns:
                 col_dtypes[column] = dtype
 
-        print(col_dtypes)
         new_data_manager = self._data_manager.astype(col_dtypes, errors, **kwargs)
         if copy:
-            return DataFrame(data_manager = new_data_manager)
+            return DataFrame(data_manager=new_data_manager)
         else:
             self._update_inplace(new_data_manager)
 
