@@ -329,8 +329,8 @@ class PandasDataManager(object):
                 return df.where(cond, other, **kwargs)
 
             reindexed_self = self.reindex(axis, self.index if not axis else self.columns).data
-            print(reindexed_self.to_pandas(False))
             reindexed_cond = cond.reindex(axis, self.index if not axis else self.columns).data
+
             new_data = reindexed_self.inter_data_operation(axis, lambda l, r: where_builder_series(l, r, other, **kwargs), reindexed_cond)
             return cls(new_data, self.index, self.columns)
 
