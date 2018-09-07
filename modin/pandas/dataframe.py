@@ -322,9 +322,10 @@ class DataFrame(object):
         """
         # The ftypes are common across all partitions.
         # The first partition will be enough.
-        result = ray.get(
-            _deploy_func.remote(lambda df: df.ftypes, self._row_partitions[0]))
-        result.index = self.columns
+        dtypes = self._data_manager.dtypes.copy()
+        ftypes = ["{0}:dense".format(str(dtype)) 
+                for dtype in dtypes.values]
+        result = pandas.Series(ftypes, index=self.columns)
         return result
 
     @property
