@@ -11,7 +11,6 @@ from pandas.core.dtypes.common import (_get_dtype_from_object, is_bool_dtype,
                                        is_timedelta64_dtype)
 from pandas.core.index import _ensure_index_from_sequences
 from pandas.core.indexing import (check_bool_indexer, convert_to_index_sliceable)
-from pandas.errors import MergeError
 from pandas.util._validators import validate_bool_kwarg
 
 import itertools
@@ -24,10 +23,8 @@ import sys
 import warnings
 
 from .utils import (from_pandas, to_pandas, _blocks_to_col, _blocks_to_row,
-                    _compile_remote_dtypes, _concat_index, _co_op_helper,
-                    _create_block_partitions, _deploy_func,
-                    _fix_blocks_dimensions, _inherit_docstrings,
-                    _map_partitions, _match_partitioning,_reindex_helper)
+                    _create_block_partitions, _fix_blocks_dimensions,
+                    _inherit_docstrings, _map_partitions)
 from ..data_management.data_manager import RayPandasDataManager
 from .index_metadata import _IndexMetadata
 from .iterator import PartitionIterator
@@ -111,21 +108,15 @@ class DataFrame(object):
                     if row_partitions is not None:
                         axis = 0
                         partitions = row_partitions
-                        axis_length = len(columns) if columns is not None else \
-                            len(col_metadata)
-                    elif col_partitions is not None:
+                    else:
                         axis = 1
                         partitions = col_partitions
-                        axis_length = len(index) if index is not None else \
-                            len(row_metadata)
 
                     # TODO: write explicit tests for "short and wide"
                     # column partitions
                     self._block_partitions = \
-                        _create_block_partitions(partitions, axis=axis,
-                                                 length=axis_length)
+                        _create_block_partitions(partitions, axis=axis)
 
-            if data_manager is None:
                 self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
 
     def _get_row_partitions(self):
@@ -3624,58 +3615,9 @@ class DataFrame(object):
             'decimal': decimal
         }
 
-        if compression is not None:
-            warnings.warn("Defaulting to Pandas implementation",
-                          PendingDeprecationWarning)
-            return to_pandas(self).to_csv(**kwargs)
-
-        if tupleize_cols is not None:
-            warnings.warn(
-                "The 'tupleize_cols' parameter is deprecated and "
-                "will be removed in a future version",
-                FutureWarning,
-                stacklevel=2)
-        else:
-            tupleize_cols = False
-
-        remote_kwargs_id = ray.put(dict(kwargs, path_or_buf=None))
-        columns_id = ray.put(self.columns)
-
-        def get_csv_str(df, index, columns, header, kwargs):
-            df.index = index
-            df.columns = columns
-            kwargs["header"] = header
-            return df.to_csv(**kwargs)
-
-        idxs = [0] + np.cumsum(self._row_metadata._lengths).tolist()
-        idx_args = [
-            self.index[idxs[i]:idxs[i + 1]]
-            for i in range(len(self._row_partitions))
-        ]
-        csv_str_ids = _map_partitions(
-            get_csv_str, self._row_partitions, idx_args,
-            [columns_id] * len(self._row_partitions),
-            [header] + [False] * (len(self._row_partitions) - 1),
-            [remote_kwargs_id] * len(self._row_partitions))
-
-        if path_or_buf is None:
-            buf = io.StringIO()
-        elif isinstance(path_or_buf, str):
-            buf = open(path_or_buf, mode)
-        else:
-            buf = path_or_buf
-
-        for csv_str_id in csv_str_ids:
-            buf.write(ray.get(csv_str_id))
-            buf.flush()
-
-        result = None
-        if path_or_buf is None:
-            result = buf.getvalue()
-            buf.close()
-        elif isinstance(path_or_buf, str):
-            buf.close()
-        return result
+        warnings.warn("Defaulting to Pandas implementation",
+                      PendingDeprecationWarning)
+        return to_pandas(self).to_csv(**kwargs)
 
     def to_dense(self):
         raise NotImplementedError(
