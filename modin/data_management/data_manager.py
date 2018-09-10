@@ -1173,7 +1173,7 @@ class PandasDataManager(object):
         new_data = self.data.apply_func_to_select_indices_along_full_axis(0, insert, loc, keep_remaining=True)
         new_columns = self.columns.insert(loc, column)
 
-	# Because a Pandas Series does not allow insert, we make a DataFrame
+        # Because a Pandas Series does not allow insert, we make a DataFrame
         # and insert the new dtype that way.
         temp_dtypes = pandas.DataFrame(self.dtypes).T
         temp_dtypes.insert(loc, column, _get_dtype_from_object(value))

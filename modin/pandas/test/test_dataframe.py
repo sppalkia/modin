@@ -131,10 +131,10 @@ def test_int_dataframe():
 
     test_get_dtype_counts(ray_df, pandas_df)
     test_get_ftype_counts(ray_df, pandas_df)
-    # test_iterrows(ray_df, pandas_df)
-    # test_items(ray_df, pandas_df)
-    # test_iteritems(ray_df, pandas_df)
-    # test_itertuples(ray_df, pandas_df)
+    test_iterrows(ray_df, pandas_df)
+    test_items(ray_df, pandas_df)
+    test_iteritems(ray_df, pandas_df)
+    test_itertuples(ray_df, pandas_df)
 
     test_max(ray_df, pandas_df)
     test_min(ray_df, pandas_df)
