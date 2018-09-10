@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import numpy as np
 import pandas
+
 from pandas.compat import string_types
 from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like)
@@ -758,6 +759,14 @@ class PandasDataManager(object):
         func = self._prepare_method(pandas.DataFrame.std, **kwargs)
         return self.full_axis_reduce(func, axis)
 
+    def to_datetime(self, **kwargs):
+        columns = self.columns
+        def to_datetime_builder(df, **kwargs):
+            df.columns = columns
+            return pandas.to_datetime(df, **kwargs)
+        func = self._prepare_method(to_datetime_builder, **kwargs)
+        return self.full_axis_reduce(func, 1)
+
     def var(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
         axis = kwargs.get("axis", 0)
@@ -866,8 +875,8 @@ class PandasDataManager(object):
 
     def dropna(self, **kwargs):
         axis = kwargs.get("axis", 0)
-        subset = kwargs.get("subset", None)
-        thresh = kwargs.get("thresh", None)
+        subset = kwargs.get("subset")
+        thresh = kwargs.get("thresh")
         how = kwargs.get("how", "any")
         # We need to subset the axis that we care about with `subset`. This
         # will be used to determine the number of values that are NA.
@@ -930,7 +939,7 @@ class PandasDataManager(object):
         cls = type(self)
 
         axis = kwargs.get("axis", 0)
-        value = kwargs.pop("value", None)
+        value = kwargs.pop("value")
 
         if isinstance(value, dict):
             if axis == 0:
@@ -957,8 +966,9 @@ class PandasDataManager(object):
         new_data = self.map_across_full_axis(axis, func)
         new_index = self.compute_index(0, new_data, False)
         new_columns = self.compute_index(1, new_data, True)
+        new_dtypes = pandas.Series([np.float64 for _ in new_columns], index=new_columns)
 
-        return cls(new_data, new_index, new_columns)
+        return cls(new_data, new_index, new_columns, new_dtypes)
 
     def rank(self, **kwargs):
         cls = type(self)
@@ -1062,7 +1072,7 @@ class PandasDataManager(object):
         df.columns = pandas.RangeIndex(len(df.columns))
         new_data = block_partitions_cls.from_pandas(df)
 
-        return cls(new_data, new_index, new_columns, new_dtypes)
+        return cls(new_data, new_index, new_columns, dtypes=new_dtypes)
 
     # __getitem__ methods
     def getitem_single_key(self, key):
@@ -1144,7 +1154,6 @@ class PandasDataManager(object):
             # it throws an error.
             new_columns = [self.columns[i] for i in range(len(self.columns)) if i not in numeric_indices]
             new_dtypes = self.dtypes.drop(columns)
-
         return cls(new_data, new_index, new_columns, new_dtypes)
     # END __delitem__ and drop
 
@@ -1164,7 +1173,7 @@ class PandasDataManager(object):
         new_data = self.data.apply_func_to_select_indices_along_full_axis(0, insert, loc, keep_remaining=True)
         new_columns = self.columns.insert(loc, column)
 
-        # Because a Pandas Series does not allow insert, we make a DataFrame
+	# Because a Pandas Series does not allow insert, we make a DataFrame
         # and insert the new dtype that way.
         temp_dtypes = pandas.DataFrame(self.dtypes).T
         temp_dtypes.insert(loc, column, _get_dtype_from_object(value))
@@ -1187,18 +1196,21 @@ class PandasDataManager(object):
 
         for i, column in enumerate(columns):
             dtype = col_dtypes[column]
-            if dtype in dtype_indices.keys():
-                dtype_indices[dtype].append(numeric_indices[i])
-            else:
-                dtype_indices[dtype] = [numeric_indices[i]]
-            new_dtype = np.dtype(dtype)
-            if dtype != np.int32 and new_dtype == np.int32:
-                new_dtype = np.dtype('int64')
-            elif dtype != np.float32 and new_dtype == np.float32:
-                new_dtype = np.dtype('float64')
-            new_dtypes[column] = new_dtype
+            if dtype != self.dtypes[column]:
+                if dtype in dtype_indices.keys():
+                    dtype_indices[dtype].append(numeric_indices[i])
+                else:
+                    dtype_indices[dtype] = [numeric_indices[i]]
+                new_dtype = np.dtype(dtype)
+                if dtype != np.int32 and new_dtype == np.int32:
+                    new_dtype = np.dtype('int64')
+                elif dtype != np.float32 and new_dtype == np.float32:
+                    new_dtype = np.dtype('float64')
+                new_dtypes[column] = new_dtype
 
+        new_data = self.data
         for dtype in dtype_indices.keys():
+            resulting_dtype = None
 
             def astype(df, internal_indices=[]):
                 block_dtypes = dict()
@@ -1208,8 +1220,8 @@ class PandasDataManager(object):
 
             new_data = self.data.apply_func_to_select_indices(0, astype, dtype_indices[dtype], keep_remaining=True)
 
-        return cls(self.data, self.index, self.columns, new_dtypes)
-    # END astype
+        return cls(new_data, self.index, self.columns, new_dtypes)
+    # END type conversions
 
     # UDF (apply and agg) methods
     # There is a wide range of behaviors that are supported, so a lot of the
@@ -1302,7 +1314,6 @@ class PandasDataManager(object):
 
         func_prepared = self._prepare_method(lambda df: callable_apply_builder(df, func, axis, index, *args, **kwargs))
         result_data = self.map_across_full_axis(axis, func_prepared)
-
         return self._post_process_apply(result_data, axis)
     # END UDF
 
