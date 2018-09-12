@@ -17,6 +17,10 @@ import numpy as np
 from .dataframe import ray, DataFrame
 from . import get_npartitions
 from .utils import from_pandas, _partition_pandas_dataframe
+from ..data_management.partitioning.partition_collections import RayBlockPartitions
+from ..data_management.partitioning.remote_partition import RayRemotePartition
+from ..data_management.partitioning.axis_partition import split_result_of_axis_func_pandas
+from ..data_management.data_manager import PandasDataManager
 
 PQ_INDEX_REGEX = re.compile('__index_level_\d+__')
 
@@ -106,7 +110,7 @@ def _skip_header(f, kwargs={}):
     return lines_read
 
 
-def _read_csv_from_file(filepath, npartitions, kwargs={}):
+def _read_csv_from_file_pandas_backed_ray(filepath, npartitions, kwargs={}):
     """Constructs a DataFrame from a CSV file.
 
     Args:
@@ -119,13 +123,13 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
     """
     empty_pd_df = pandas.read_csv(
         filepath, **dict(kwargs, nrows=0, skipfooter=0, skip_footer=0))
-    names = empty_pd_df.columns
+    column_names = empty_pd_df.columns
 
     skipfooter = kwargs["skipfooter"]
     skip_footer = kwargs["skip_footer"]
 
     partition_kwargs = dict(
-        kwargs, header=None, names=names, skipfooter=0, skip_footer=0)
+        kwargs, header=None, names=column_names, skipfooter=0, skip_footer=0)
     with open(filepath, "rb") as f:
         # Get the BOM if necessary
         prefix = b""
@@ -142,9 +146,10 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
 
         # Launch tasks to read partitions
         partition_ids = []
-        index_ids = []
         total_bytes = os.path.getsize(filepath)
         chunk_size = max(1, (total_bytes - f.tell()) // npartitions)
+        num_splits = RayBlockPartitions._compute_num_partitions()
+
         while f.tell() < total_bytes:
             start = f.tell()
             f.seek(chunk_size, os.SEEK_CUR)
@@ -154,24 +159,34 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
                 kwargs["skipfooter"] = skipfooter
                 kwargs["skip_footer"] = skip_footer
 
-            partition_id, index_id = _read_csv_with_offset.remote(
-                filepath, start, f.tell(), partition_kwargs_id, prefix_id)
-            partition_ids.append(partition_id)
-            index_ids.append(index_id)
+            partition_id = _read_csv_with_offset._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits)
+            partition_ids.append([RayRemotePartition(obj) for obj in partition_id])
+
+    new_data = RayBlockPartitions(np.array(partition_ids))
+    index_col = kwargs.get("index_col", None)
+
+    if index_col is not None:
+        new_index = new_data.get_indices(0, lambda df: df.index)
+    else:
+        new_index = pandas.RangeIndex(len(new_data))
+
+    new_manager = PandasDataManager(new_data, new_index, column_names)
+    new_df = DataFrame(data_manager=new_manager)
+    return new_df
 
     # Construct index
-    index_id = get_index.remote([empty_pd_df.index.name], *index_ids) \
-        if kwargs["index_col"] is not None else None
-
-    df = DataFrame(row_partitions=partition_ids, columns=names, index=index_id)
-
-    skipfooter = kwargs["skipfooter"] or kwargs["skip_footer"]
-    if skipfooter:
-        df = df.drop(df.index[-skipfooter:])
-    if kwargs["squeeze"] and len(df.columns) == 1:
-        return df[df.columns[0]]
-
-    return df
+    # index_id = get_index.remote([empty_pd_df.index.name], *index_ids) \
+    #     if kwargs["index_col"] is not None else None
+    #
+    # df = DataFrame(row_partitions=partition_ids, columns=names, index=index_id)
+    #
+    # skipfooter = kwargs["skipfooter"] or kwargs["skip_footer"]
+    # if skipfooter:
+    #     df = df.drop(df.index[-skipfooter:])
+    # if kwargs["squeeze"] and len(df.columns) == 1:
+    #     return df[df.columns[0]]
+    #
+    # return df
 
 
 def _read_csv_from_pandas(filepath_or_buffer, kwargs):
@@ -366,7 +381,7 @@ def read_csv(filepath_or_buffer,
 
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
-    return _read_csv_from_file(filepath_or_buffer, get_npartitions(), kwargs)
+    return _read_csv_from_file_pandas_backed_ray(filepath_or_buffer, get_npartitions(), kwargs)
 
 
 def read_json(path_or_buf=None,
@@ -578,17 +593,17 @@ def get_index(index_name, *partition_indices):
     return index
 
 
-@ray.remote(num_return_vals=2)
-def _read_csv_with_offset(fn, start, end, kwargs={}, header=b''):
-    bio = open(fn, 'rb')
+@ray.remote
+def _read_csv_with_offset(fname, num_splits, start, end, kwargs={}, header=b''):
+    bio = open(fname, 'rb')
     bio.seek(start)
     to_read = header + bio.read(end - start)
     bio.close()
     pandas_df = pandas.read_csv(BytesIO(to_read), **kwargs)
-    index = pandas_df.index
+    # index = pandas_df.index
     # Partitions must have RangeIndex
-    pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
-    return pandas_df, index
+    # pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
+    return split_result_of_axis_func_pandas(1, num_splits, pandas_df)
 
 
 @ray.remote

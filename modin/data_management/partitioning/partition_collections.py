@@ -672,6 +672,9 @@ class BlockPartitions(object):
         cls = type(self)
         return cls(self.partitions[key])
 
+    def __len__(self):
+        return sum(self.block_lengths)
+
 
 class RayBlockPartitions(BlockPartitions):
     """This method implements the interface in `BlockPartitions`."""
