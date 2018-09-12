@@ -20,7 +20,7 @@ from .utils import from_pandas, _partition_pandas_dataframe
 from ..data_management.partitioning.partition_collections import RayBlockPartitions
 from ..data_management.partitioning.remote_partition import RayRemotePartition
 from ..data_management.partitioning.axis_partition import split_result_of_axis_func_pandas
-from ..data_management.data_manager import PandasDataManager
+from ..data_management.data_manager import RayPandasDataManager
 
 PQ_INDEX_REGEX = re.compile('__index_level_\d+__')
 
@@ -146,6 +146,7 @@ def _read_csv_from_file_pandas_backed_ray(filepath, npartitions, kwargs={}):
 
         # Launch tasks to read partitions
         partition_ids = []
+        index_ids = []
         total_bytes = os.path.getsize(filepath)
         chunk_size = max(1, (total_bytes - f.tell()) // npartitions)
         num_splits = RayBlockPartitions._compute_num_partitions()
@@ -159,19 +160,23 @@ def _read_csv_from_file_pandas_backed_ray(filepath, npartitions, kwargs={}):
                 kwargs["skipfooter"] = skipfooter
                 kwargs["skip_footer"] = skip_footer
 
-            partition_id = _read_csv_with_offset._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits)
-            partition_ids.append([RayRemotePartition(obj) for obj in partition_id])
-
-    new_data = RayBlockPartitions(np.array(partition_ids))
+            partition_id = _read_csv_with_offset._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1)
+            partition_ids.append(partition_id[:-1])
+            index_ids.append(partition_id[-1])
     index_col = kwargs.get("index_col", None)
-
-    if index_col is not None:
-        new_index = new_data.get_indices(0, lambda df: df.index)
+    print("Submission ended")
+    if index_col is None:
+        new_index = pandas.RangeIndex(len([i for idx in index_ids for i in ray.get(idx)]))
     else:
-        new_index = pandas.RangeIndex(len(new_data))
 
-    new_manager = PandasDataManager(new_data, new_index, column_names)
+        new_index_ids = ray.get(index_ids)
+        new_index = new_index_ids[0]
+        new_index.append(new_index_ids[1:])
+    print("Index endd")
+    new_manager = RayPandasDataManager._from_old_block_partitions(np.array(partition_ids), new_index, column_names)
+    print("New manager created")
     new_df = DataFrame(data_manager=new_manager)
+    print("New frame created")
     return new_df
 
     # Construct index
@@ -600,10 +605,10 @@ def _read_csv_with_offset(fname, num_splits, start, end, kwargs={}, header=b''):
     to_read = header + bio.read(end - start)
     bio.close()
     pandas_df = pandas.read_csv(BytesIO(to_read), **kwargs)
-    # index = pandas_df.index
+    index = pandas_df.index
     # Partitions must have RangeIndex
-    # pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
-    return split_result_of_axis_func_pandas(1, num_splits, pandas_df)
+    pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
+    return split_result_of_axis_func_pandas(1, num_splits, pandas_df) + [index]
 
 
 @ray.remote
