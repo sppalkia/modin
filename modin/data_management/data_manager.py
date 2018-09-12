@@ -56,7 +56,7 @@ class PandasDataManager(object):
     _columns_cache = None
 
     def _get_index(self):
-        return self._index_cache.index
+        return self._index_cache
 
     def _get_columns(self):
         return self._columns_cache.index
@@ -65,14 +65,12 @@ class PandasDataManager(object):
         if self._index_cache is not None:
             self._index_cache.index = new_index
         else:
-            self._index_cache = pandas.Series(index=new_index)
-
+            self._index_cache = new_index# pandas.Series(index=new_index)
     def _set_columns(self, new_columns):
         if self._columns_cache is not None:
             self._columns_cache.index = new_columns
         else:
             self._columns_cache = pandas.Series(index=new_columns)
-
     columns = property(_get_columns, _set_columns)
     index = property(_get_index, _set_index)
 
@@ -1011,20 +1009,20 @@ class PandasDataManager(object):
             # ensure that we extract the correct data on each node. The index
             # on a transposed manager is already set to the correct value, so
             # we need to only take the head of that instead of re-transposing.
-            result = cls(self.data.transpose().take(1, n).transpose(), self.index[:n], self.columns, self.dtypes)
+            result = cls(self.data.transpose().take(1, n).transpose(), self.index[:n], self.columns, self._dtype_cache)
             result._is_transposed = True
         else:
-            result = cls(self.data.take(0, n), self.index[:n], self.columns, self.dtypes)
+            result = cls(self.data.take(0, n), self.index[:n], self.columns, self._dtype_cache)
         return result
 
     def tail(self, n):
         cls = type(self)
         # See head for an explanation of the transposed behavior
         if self._is_transposed:
-            result = cls(self.data.transpose().take(1, -n).transpose(), self.index[-n:], self.columns, self.dtypes)
+            result = cls(self.data.transpose().take(1, -n).transpose(), self.index[-n:], self.columns, self._dtype_cache)
             result._is_transposed = True
         else:
-            result = cls(self.data.take(0, -n), self.index[-n:], self.columns, self.dtypes)
+            result = cls(self.data.take(0, -n), self.index[-n:], self.columns, self._dtype_cache)
         return result
 
     def front(self, n):

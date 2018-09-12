@@ -20,7 +20,7 @@ from .utils import from_pandas, _partition_pandas_dataframe
 from ..data_management.partitioning.partition_collections import RayBlockPartitions
 from ..data_management.partitioning.remote_partition import RayRemotePartition
 from ..data_management.partitioning.axis_partition import split_result_of_axis_func_pandas
-from ..data_management.data_manager import RayPandasDataManager
+from ..data_management.data_manager import PandasDataManager
 
 PQ_INDEX_REGEX = re.compile('__index_level_\d+__')
 
@@ -160,8 +160,8 @@ def _read_csv_from_file_pandas_backed_ray(filepath, npartitions, kwargs={}):
                 kwargs["skipfooter"] = skipfooter
                 kwargs["skip_footer"] = skip_footer
 
-            partition_id = _read_csv_with_offset._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1)
-            partition_ids.append(partition_id[:-1])
+            partition_id = (_read_csv_with_offset._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1))
+            partition_ids.append([RayRemotePartition(obj) for obj in partition_id[:-1]])
             index_ids.append(partition_id[-1])
     index_col = kwargs.get("index_col", None)
     print("Submission ended")
@@ -172,7 +172,7 @@ def _read_csv_from_file_pandas_backed_ray(filepath, npartitions, kwargs={}):
         new_index = ray.get(new_index_ids)
 
     print("Index ended")
-    new_manager = RayPandasDataManager._from_old_block_partitions(np.array(partition_ids), new_index, column_names)
+    new_manager = PandasDataManager(RayBlockPartitions(np.array(partition_ids)), new_index, column_names)
     print("New manager created")
     new_df = DataFrame(data_manager=new_manager)
     print("New frame created")
