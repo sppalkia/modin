@@ -8,6 +8,7 @@ import pandas
 from pandas.compat import string_types
 from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like)
+from pandas.core.index import _ensure_index
 
 from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
 from .partitioning.remote_partition import RayRemotePartition
@@ -26,7 +27,7 @@ class PandasDataManager(object):
         if dtypes is not None:
             self._dtype_cache = dtypes
 
-    # dtypes
+    # Index, columns and dtypes objects
     _dtype_cache = None
 
     def _get_dtype(self):
@@ -45,37 +46,41 @@ class PandasDataManager(object):
 
     dtypes = property(_get_dtype, _set_dtype)
 
-    # Index and columns objects
     # These objects are currently not distributed.
-    # Note: These are more performant as pandas.Series objects than they are as
-    # pandas.DataFrame objects.
-    #
-    # _index_cache is a pandas.Series that holds the index
     _index_cache = None
-    # _columns_cache is a pandas.Series that holds the columns
     _columns_cache = None
 
     def _get_index(self):
-        return self._index_cache.index
+        return self._index_cache
 
     def _get_columns(self):
-        return self._columns_cache.index
+        return self._columns_cache
+
+    def _validate_set_axis(self, new_labels, old_labels):
+        new_labels = _ensure_index(new_labels)
+        old_len = len(old_labels)
+        new_len = len(new_labels)
+        if old_len != new_len:
+            raise ValueError('Length mismatch: Expected axis has %d elements, '
+                             'new values have %d elements' % (old_len, new_len))
+        return new_labels
 
     def _set_index(self, new_index):
-        if self._index_cache is not None:
-            self._index_cache.index = new_index
+        if self._index_cache is None:
+            self._index_cache = _ensure_index(new_index)
         else:
-            self._index_cache = pandas.Series(index=new_index)
+            new_index = self._validate_set_axis(new_index, self._index_cache)
+            self._index_cache = new_index
 
     def _set_columns(self, new_columns):
-        if self._columns_cache is not None:
-            self._columns_cache.index = new_columns
+        if self._columns_cache is None:
+            self._columns_cache = _ensure_index(new_columns)
         else:
-            self._columns_cache = pandas.Series(index=new_columns)
+            new_columns = self._validate_set_axis(new_columns, self._columns_cache)
+            self._columns_cache = new_columns
 
     columns = property(_get_columns, _set_columns)
     index = property(_get_index, _set_index)
-
     # END Index, columns, and dtypes objects
 
     def compute_index(self, axis, data_object, compute_diff=True):
@@ -1000,20 +1005,20 @@ class PandasDataManager(object):
             # ensure that we extract the correct data on each node. The index
             # on a transposed manager is already set to the correct value, so
             # we need to only take the head of that instead of re-transposing.
-            result = cls(self.data.transpose().take(1, n).transpose(), self.index[:n], self.columns, self.dtypes)
+            result = cls(self.data.transpose().take(1, n).transpose(), self.index[:n], self.columns, self._dtype_cache)
             result._is_transposed = True
         else:
-            result = cls(self.data.take(0, n), self.index[:n], self.columns, self.dtypes)
+            result = cls(self.data.take(0, n), self.index[:n], self.columns, self._dtype_cache)
         return result
 
     def tail(self, n):
         cls = type(self)
         # See head for an explanation of the transposed behavior
         if self._is_transposed:
-            result = cls(self.data.transpose().take(1, -n).transpose(), self.index[-n:], self.columns, self.dtypes)
+            result = cls(self.data.transpose().take(1, -n).transpose(), self.index[-n:], self.columns, self._dtype_cache)
             result._is_transposed = True
         else:
-            result = cls(self.data.take(0, -n), self.index[-n:], self.columns, self.dtypes)
+            result = cls(self.data.take(0, -n), self.index[-n:], self.columns, self._dtype_cache)
         return result
 
     def front(self, n):

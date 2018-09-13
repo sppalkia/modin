@@ -5,6 +5,7 @@ from __future__ import print_function
 import pandas
 from pandas.io.common import _infer_compression
 
+import inspect
 from io import BytesIO
 import os
 import py
@@ -17,6 +18,10 @@ import numpy as np
 from .dataframe import ray, DataFrame
 from . import get_npartitions
 from .utils import from_pandas, _partition_pandas_dataframe
+from ..data_management.partitioning.partition_collections import RayBlockPartitions
+from ..data_management.partitioning.remote_partition import RayRemotePartition
+from ..data_management.partitioning.axis_partition import split_result_of_axis_func_pandas
+from ..data_management.data_manager import PandasDataManager
 
 PQ_INDEX_REGEX = re.compile('__index_level_\d+__')
 
@@ -59,11 +64,11 @@ def read_parquet(path, engine='auto', columns=None, **kwargs):
 # CSV
 def _skip_header(f, kwargs={}):
     lines_read = 0
-    comment = kwargs["comment"]
-    skiprows = kwargs["skiprows"]
-    encoding = kwargs["encoding"]
-    header = kwargs["header"]
-    names = kwargs["names"]
+    comment = kwargs.get("comment", None)
+    skiprows = kwargs.get("skiprows", None)
+    encoding = kwargs.get("encoding", None)
+    header = kwargs.get("header", "infer")
+    names = kwargs.get("names", None)
 
     if header is None:
         return lines_read
@@ -106,7 +111,7 @@ def _skip_header(f, kwargs={}):
     return lines_read
 
 
-def _read_csv_from_file(filepath, npartitions, kwargs={}):
+def _read_csv_from_file_pandas_on_ray(filepath, npartitions, kwargs={}):
     """Constructs a DataFrame from a CSV file.
 
     Args:
@@ -119,17 +124,16 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
     """
     empty_pd_df = pandas.read_csv(
         filepath, **dict(kwargs, nrows=0, skipfooter=0, skip_footer=0))
-    names = empty_pd_df.columns
+    column_names = empty_pd_df.columns
 
-    skipfooter = kwargs["skipfooter"]
-    skip_footer = kwargs["skip_footer"]
+    skipfooter = kwargs.get("skipfooter", None) or kwargs.get("skip_footer", None)
 
     partition_kwargs = dict(
-        kwargs, header=None, names=names, skipfooter=0, skip_footer=0)
+        kwargs, header=None, names=column_names, skipfooter=0, skip_footer=0)
     with open(filepath, "rb") as f:
         # Get the BOM if necessary
         prefix = b""
-        if kwargs["encoding"] is not None:
+        if kwargs.get("encoding", None) is not None:
             prefix = f.readline()
             partition_kwargs["skiprows"] = 1
             f.seek(0, os.SEEK_SET)  # Return to beginning of file
@@ -145,30 +149,30 @@ def _read_csv_from_file(filepath, npartitions, kwargs={}):
         index_ids = []
         total_bytes = os.path.getsize(filepath)
         chunk_size = max(1, (total_bytes - f.tell()) // npartitions)
+        num_splits = min(len(column_names), RayBlockPartitions._compute_num_partitions())
+
         while f.tell() < total_bytes:
             start = f.tell()
             f.seek(chunk_size, os.SEEK_CUR)
             f.readline()  # Read a whole number of lines
 
-            if f.tell() >= total_bytes:
-                kwargs["skipfooter"] = skipfooter
-                kwargs["skip_footer"] = skip_footer
+            partition_id = _read_csv_with_offset_pandas_on_ray._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1)
+            partition_ids.append([RayRemotePartition(obj) for obj in partition_id[:-1]])
+            index_ids.append(partition_id[-1])
 
-            partition_id, index_id = _read_csv_with_offset.remote(
-                filepath, start, f.tell(), partition_kwargs_id, prefix_id)
-            partition_ids.append(partition_id)
-            index_ids.append(index_id)
+    index_col = kwargs.get("index_col", None)
+    if index_col is None:
+        new_index = pandas.RangeIndex(sum(ray.get(index_ids)))
+    else:
+        new_index_ids = get_index.remote([empty_pd_df.index.name], *index_ids)
+        new_index = ray.get(new_index_ids)
 
-    # Construct index
-    index_id = get_index.remote([empty_pd_df.index.name], *index_ids) \
-        if kwargs["index_col"] is not None else None
+    new_manager = PandasDataManager(RayBlockPartitions(np.array(partition_ids)), new_index, column_names)
+    df = DataFrame(data_manager=new_manager)
 
-    df = DataFrame(row_partitions=partition_ids, columns=names, index=index_id)
-
-    skipfooter = kwargs["skipfooter"] or kwargs["skip_footer"]
     if skipfooter:
         df = df.drop(df.index[-skipfooter:])
-    if kwargs["squeeze"] and len(df.columns) == 1:
+    if kwargs.get("squeeze", False) and len(df.columns) == 1:
         return df[df.columns[0]]
 
     return df
@@ -250,62 +254,16 @@ def read_csv(filepath_or_buffer,
               We only support local files for now.
         kwargs: Keyword arguments in pandas::from_csv
     """
-
-    kwargs = {
-        'sep': sep,
-        'delimiter': delimiter,
-        'header': header,
-        'names': names,
-        'index_col': index_col,
-        'usecols': usecols,
-        'squeeze': squeeze,
-        'prefix': prefix,
-        'mangle_dupe_cols': mangle_dupe_cols,
-        'dtype': dtype,
-        'engine': engine,
-        'converters': converters,
-        'true_values': true_values,
-        'false_values': false_values,
-        'skipinitialspace': skipinitialspace,
-        'skiprows': skiprows,
-        'nrows': nrows,
-        'na_values': na_values,
-        'keep_default_na': keep_default_na,
-        'na_filter': na_filter,
-        'verbose': verbose,
-        'skip_blank_lines': skip_blank_lines,
-        'parse_dates': parse_dates,
-        'infer_datetime_format': infer_datetime_format,
-        'keep_date_col': keep_date_col,
-        'date_parser': date_parser,
-        'dayfirst': dayfirst,
-        'iterator': iterator,
-        'chunksize': chunksize,
-        'compression': compression,
-        'thousands': thousands,
-        'decimal': decimal,
-        'lineterminator': lineterminator,
-        'quotechar': quotechar,
-        'quoting': quoting,
-        'escapechar': escapechar,
-        'comment': comment,
-        'encoding': encoding,
-        'dialect': dialect,
-        'tupleize_cols': tupleize_cols,
-        'error_bad_lines': error_bad_lines,
-        'warn_bad_lines': warn_bad_lines,
-        'skipfooter': skipfooter,
-        'skip_footer': skip_footer,
-        'doublequote': doublequote,
-        'delim_whitespace': delim_whitespace,
-        'as_recarray': as_recarray,
-        'compact_ints': compact_ints,
-        'use_unsigned': use_unsigned,
-        'low_memory': low_memory,
-        'buffer_lines': buffer_lines,
-        'memory_map': memory_map,
-        'float_precision': float_precision,
-    }
+    # The intention of the inspection code is to reduce the amount of
+    # communication we have to do between processes and nodes. We take a quick
+    # pass over the arguments and remove those that are default values so we
+    # don't have to serialize and send them to the workers. Because the
+    # arguments list is so long, this does end up saving time based on the
+    # number of nodes in the cluster.
+    frame = inspect.currentframe()
+    _, _, _, kwargs = inspect.getargvalues(frame)
+    _, _, _, defaults, _, _, _ = inspect.getfullargspec(read_csv)
+    kwargs = {kw: kwargs[kw] for kw in kwargs if kw in defaults and kwargs[kw] != defaults[kw]}
 
     if isinstance(filepath_or_buffer, str):
         if not os.path.exists(filepath_or_buffer):
@@ -366,7 +324,7 @@ def read_csv(filepath_or_buffer,
 
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
-    return _read_csv_from_file(filepath_or_buffer, get_npartitions(), kwargs)
+    return _read_csv_from_file_pandas_on_ray(filepath_or_buffer, get_npartitions(), kwargs)
 
 
 def read_json(path_or_buf=None,
@@ -578,17 +536,23 @@ def get_index(index_name, *partition_indices):
     return index
 
 
-@ray.remote(num_return_vals=2)
-def _read_csv_with_offset(fn, start, end, kwargs={}, header=b''):
-    bio = open(fn, 'rb')
+@ray.remote
+def _read_csv_with_offset_pandas_on_ray(fname, num_splits, start, end, kwargs, header):
+    bio = open(fname, 'rb')
     bio.seek(start)
     to_read = header + bio.read(end - start)
     bio.close()
     pandas_df = pandas.read_csv(BytesIO(to_read), **kwargs)
-    index = pandas_df.index
-    # Partitions must have RangeIndex
-    pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
-    return pandas_df, index
+    if kwargs.get("index_col", None) is not None:
+        index = pandas_df.index
+        # Partitions must have RangeIndex
+        pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
+    else:
+        # We will use the lengths to build the index if we are not given an
+        # `index_col`.
+        index = len(pandas_df)
+
+    return split_result_of_axis_func_pandas(1, num_splits, pandas_df) + [index]
 
 
 @ray.remote
