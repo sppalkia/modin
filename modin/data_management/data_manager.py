@@ -67,16 +67,16 @@ class PandasDataManager(object):
 
     def _set_index(self, new_index):
         if self._index_cache is None:
-            self._index_cache = new_index
+            self._index_cache = _ensure_index(new_index)
         else:
             new_index = self._validate_set_axis(new_index, self._index_cache)
             self._index_cache = new_index
 
     def _set_columns(self, new_columns):
         if self._columns_cache is None:
-            self._columns_cache = new_columns
+            self._columns_cache = _ensure_index(new_columns)
         else:
-            new_columns = self._validate_set_axis(new_columns, self._index_cache)
+            new_columns = self._validate_set_axis(new_columns, self._columns_cache)
             self._columns_cache = new_columns
 
     columns = property(_get_columns, _set_columns)

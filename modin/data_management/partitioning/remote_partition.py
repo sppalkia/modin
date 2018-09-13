@@ -110,7 +110,6 @@ class RemotePartition(object):
     _length_cache = None
     _width_cache = None
 
-    @property
     def length(self):
         if self._length_cache is None:
             cls = type(self)
@@ -120,7 +119,6 @@ class RemotePartition(object):
             self._length_cache = self.apply(preprocessed_func)
         return self._length_cache
 
-    @property
     def width(self):
         if self._width_cache is None:
             cls = type(self)

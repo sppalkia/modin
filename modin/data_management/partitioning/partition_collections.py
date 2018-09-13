@@ -100,7 +100,7 @@ class BlockPartitions(object):
             # The first column will have the correct lengths. We have an
             # invariant that requires that all blocks be the same length in a
             # row of blocks.
-            self._lengths_cache = [obj.length.get() for obj in self.partitions.T[0]]
+            self._lengths_cache = [obj.length().get() for obj in self.partitions.T[0]]
         return self._lengths_cache
 
     # Widths of the blocks
@@ -117,7 +117,7 @@ class BlockPartitions(object):
             # The first column will have the correct lengths. We have an
             # invariant that requires that all blocks be the same width in a
             # column of blocks.
-            self._widths_cache = [obj.width.get() for obj in self.partitions[0]]
+            self._widths_cache = [obj.width().get() for obj in self.partitions[0]]
         return self._widths_cache
 
     def full_reduce(self, map_func, reduce_func, axis):
@@ -703,7 +703,7 @@ class RayBlockPartitions(BlockPartitions):
             # The first column will have the correct lengths. We have an
             # invariant that requires that all blocks be the same length in a
             # row of blocks.
-            self._lengths_cache = ray.get([obj.length.oid for obj in self.partitions.T[0]])
+            self._lengths_cache = ray.get([obj.length().oid for obj in self.partitions.T[0]])
         return self._lengths_cache
 
     # Widths of the blocks
@@ -720,7 +720,7 @@ class RayBlockPartitions(BlockPartitions):
             # The first column will have the correct lengths. We have an
             # invariant that requires that all blocks be the same width in a
             # column of blocks.
-            self._widths_cache = ray.get([obj.width.oid for obj in self.partitions[0]])
+            self._widths_cache = ray.get([obj.width().oid for obj in self.partitions[0]])
         return self._widths_cache
 
     @property
