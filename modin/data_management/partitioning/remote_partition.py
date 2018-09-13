@@ -117,7 +117,7 @@ class RemotePartition(object):
             func = cls.length_extraction_fn()
             preprocessed_func = cls.preprocess_func(func)
 
-            self._length_cache = self.apply(preprocessed_func).get()
+            self._length_cache = self.apply(preprocessed_func)
         return self._length_cache
 
     @property
@@ -127,7 +127,7 @@ class RemotePartition(object):
             func = cls.width_extraction_fn()
             preprocessed_func = cls.preprocess_func(func)
 
-            self._width_cache = self.apply(preprocessed_func).get()
+            self._width_cache = self.apply(preprocessed_func)
         return self._width_cache
 
 
