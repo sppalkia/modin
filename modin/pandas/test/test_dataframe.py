@@ -1627,9 +1627,9 @@ def test_fillna():
     # test_frame_pad_backfill_limit()
     test_fillna_dtype_conversion()
     test_fillna_skip_certain_blocks()
-    test_fillna_dict_series()
 
     with pytest.raises(NotImplementedError):
+        test_fillna_dict_series()
         test_fillna_dataframe()
 
     test_fillna_columns()

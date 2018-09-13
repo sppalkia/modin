@@ -545,7 +545,7 @@ class BlockPartitions(object):
             if not keep_remaining:
                 result = np.array([self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in partitions_dict])
             else:
-                result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[idx] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
+                result = np.array([partitions_for_apply[i] if i not in partitions_dict else self._apply_func_to_list_of_partitions(func, partitions_for_apply[i], func_dict={idx: dict_indices[i] for idx in partitions_dict[i]}) for i in range(len(partitions_for_apply))])
         else:
             if not keep_remaining:
                 # We are passing internal indices in here. In order for func to
