@@ -212,7 +212,6 @@ class PandasDataManager(object):
 
             return cls(new_data, joined_axis, new_columns)
 
-
     def _join_data_manager(self, other, **kwargs):
         assert isinstance(other, type(self)), \
             "This method is for data manager objects only"
@@ -362,7 +361,7 @@ class PandasDataManager(object):
         return self._inter_df_op_handler(update_builder, other, **kwargs)
 
     def add(self, other, **kwargs):
-        #TODO: need to write a prepare_function for inter_df operations
+        # TODO: need to write a prepare_function for inter_df operations
         func = pandas.DataFrame.add
         return self._inter_df_op_handler(func, other, **kwargs)
 
