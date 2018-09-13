@@ -184,8 +184,8 @@ class PandasDataManager(object):
         return self._append_list_of_managers(other, axis, **kwargs)
 
     def _append_list_of_managers(self, others, axis, **kwargs):
-        assert isinstance(others, list), \
-            "This method is for lists of DataManager objects only"
+        if not isinstance(others, list):
+            others = [others]
         assert all(isinstance(other, type(self)) for other in others), \
             "Different Manager objects are being used. This is not allowed"
         cls = type(self)
