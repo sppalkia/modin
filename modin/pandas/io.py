@@ -156,7 +156,7 @@ def _read_csv_from_file_pandas_on_ray(filepath, npartitions, kwargs={}):
             f.seek(chunk_size, os.SEEK_CUR)
             f.readline()  # Read a whole number of lines
 
-            partition_id = (_read_csv_with_offset_pandas_on_ray._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1))
+            partition_id = _read_csv_with_offset_pandas_on_ray._submit(args=(filepath, num_splits, start, f.tell(), partition_kwargs_id, prefix_id), num_return_vals=num_splits + 1)
             partition_ids.append([RayRemotePartition(obj) for obj in partition_id[:-1]])
             index_ids.append(partition_id[-1])
 
@@ -537,7 +537,7 @@ def get_index(index_name, *partition_indices):
 
 
 @ray.remote
-def _read_csv_with_offset_pandas_on_ray(fname, num_splits, start, end, kwargs={}, header=b''):
+def _read_csv_with_offset_pandas_on_ray(fname, num_splits, start, end, kwargs, header):
     bio = open(fname, 'rb')
     bio.seek(start)
     to_read = header + bio.read(end - start)
@@ -548,6 +548,8 @@ def _read_csv_with_offset_pandas_on_ray(fname, num_splits, start, end, kwargs={}
         # Partitions must have RangeIndex
         pandas_df.index = pandas.RangeIndex(0, len(pandas_df))
     else:
+        # We will use the lengths to build the index if we are not given an
+        # `index_col`.
         index = len(pandas_df)
 
     return split_result_of_axis_func_pandas(1, num_splits, pandas_df) + [index]
