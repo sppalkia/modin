@@ -2721,7 +2721,27 @@ class DataFrame(object):
             pct=pct))
 
     def rdiv(self, other, axis='columns', level=None, fill_value=None):
-        return self.div(other, axis, level, fill_value)
+        """Div this DataFrame against another DataFrame/Series/scalar.
+
+        Args:
+            other: The object to use to apply the div against this.
+            axis: The axis to div over.
+            level: The Multilevel index level to apply div over.
+            fill_value: The value to fill NaNs with.
+
+        Returns:
+            A new DataFrame with the rdiv applied.
+        """
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.rdiv(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def reindex(self,
                 labels=None,
@@ -2974,10 +2994,52 @@ class DataFrame(object):
         return DataFrame(data_manager=self._data_manager.round(decimals=decimals, **kwargs))
 
     def rpow(self, other, axis='columns', level=None, fill_value=None):
-        return self.pow(other, axis, level, fill_value)
+        """Pow this DataFrame against another DataFrame/Series/scalar.
+
+        Args:
+            other: The object to use to apply the pow against this.
+            axis: The axis to pow over.
+            level: The Multilevel index level to apply pow over.
+            fill_value: The value to fill NaNs with.
+
+        Returns:
+            A new DataFrame with the Pow applied.
+        """
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.rpow(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+
+        return self._create_dataframe_from_manager(new_manager)
+
 
     def rsub(self, other, axis='columns', level=None, fill_value=None):
-        return self.sub(other, axis, level, fill_value)
+        """Subtract a DataFrame/Series/scalar from this DataFrame.
+
+        Args:
+            other: The object to use to apply the subtraction to this.
+            axis: THe axis to apply the subtraction over.
+            level: Mutlilevel index level to subtract over.
+            fill_value: The value to fill NaNs with.
+
+        Returns:
+             A new DataFrame with the subtraciont applied.
+        """
+        if level is not None:
+            raise NotImplementedError("Mutlilevel index not yet supported "
+                                      "in Pandas on Ray")
+
+        other = self._validate_other(other, axis)
+        new_manager = self._data_manager.rsub(other=other,
+                                             axis=axis,
+                                             level=level,
+                                             fill_value=fill_value)
+        return self._create_dataframe_from_manager(new_manager)
 
     def rtruediv(self, other, axis='columns', level=None, fill_value=None):
         return self.truediv(other, axis, level, fill_value)

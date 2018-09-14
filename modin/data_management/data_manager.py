@@ -368,6 +368,10 @@ class PandasDataManager(object):
     def div(self, other, **kwargs):
         func = pandas.DataFrame.div
         return self._inter_df_op_handler(func, other, **kwargs)
+    
+    def rdiv(self, other, **kwargs):
+        func = pandas.DataFrame.rdiv
+        return self._inter_df_op_handler(func, other, **kwargs)
 
     def eq(self, other, **kwargs):
         func = pandas.DataFrame.eq
@@ -409,8 +413,16 @@ class PandasDataManager(object):
         func = pandas.DataFrame.pow
         return self._inter_df_op_handler(func, other, **kwargs)
 
+    def rpow(self, other, **kwargs):
+        func = pandas.DataFrame.rpow
+        return self._inter_df_op_handler(func, other, **kwargs)
+
     def sub(self, other, **kwargs):
         func = pandas.DataFrame.sub
+        return self._inter_df_op_handler(func, other, **kwargs)
+
+    def rsub(self, other, **kwargs):
+        func = pandas.DataFrame.rsub
         return self._inter_df_op_handler(func, other, **kwargs)
 
     def truediv(self, other, **kwargs):
