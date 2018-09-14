@@ -36,6 +36,44 @@ def get_dummies(data,
     Returns:
         DataFrame or one-hot encoded data.
     """
+    if sparse:
+        raise NotImplementedError(
+            "SparseDataFrame is not implemented. "
+            "To contribute to Pandas on Ray, please visit "
+            "github.com/modin-project/modin.")
+
+    if not isinstance(data, DataFrame):
+        return pandas.get_dummies(
+            data,
+            prefix=prefix,
+            prefix_sep=prefix_sep,
+            dummy_na=dummy_na,
+            columns=columns,
+            sparse=sparse,
+            drop_first=drop_first)
+
+    if isinstance(data, DataFrame):
+        df = data
+    elif is_list_like(data):
+        df = DataFrame(data)
+
+    if columns is None:
+        columns_to_encode = df.dtypes.isin([np.dtype("O"), 'category'])
+        columns_to_encode = df.columns[columns_to_encode]
+    else:
+        columns_to_encode = columns
+
+    new_manager = df._data_manager.get_dummies(columns_to_encode,
+                                               prefix=prefix,
+                                               prefix_sep=prefix_sep,
+                                               dummy_na=dummy_na,
+                                               drop_first=drop_first)
+
+    return DataFrame(data_manager=new_manager)
+
+
+    ##############
+
     if not isinstance(data, DataFrame):
         return pandas.get_dummies(
             data,
@@ -116,7 +154,9 @@ def get_dummies(data,
     total = 0
     columns = []
     for i, part in enumerate(data._col_partitions):
+        print(type(data))
         col_index = data._col_metadata.partition_series(i)
+
 
         # TODO(kunalgosar): Handle the case of duplicate columns here
         to_encode = col_index.index.isin(columns_to_encode)

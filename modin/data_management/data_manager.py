@@ -5,6 +5,7 @@ from __future__ import print_function
 import numpy as np
 import pandas
 
+from itertools import cycle
 from pandas.compat import string_types
 from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like, is_numeric_dtype)
@@ -1473,6 +1474,74 @@ class PandasDataManager(object):
         """
         func = self._prepare_method(repartition_func, **kwargs)
         return self.data.manual_shuffle(axis, func)
+
+    def get_dummies(self, columns, **kwargs):
+        cls = type(self)
+        original_col = columns
+        prefix = kwargs.get("prefix", None)
+        prefix_sep = kwargs.get("prefix_sep", "_")
+        dummy_na = kwargs.get("dummy_na", False)
+        drop_first = kwargs.get("drop_first", False)
+        dtype = kwargs.get("dtype", np.uint8)
+
+        def check_len(item, name):
+            len_msg = ("Length of '{name}' ({len_item}) did not match the "
+                       "length of the columns being encoded ({len_enc}).")
+
+            if is_list_like(item):
+                if not len(item) == len(columns):
+                    len_msg = len_msg.format(
+                        name=name,
+                        len_item=len(item),
+                        len_enc=len(columns))
+                    raise ValueError(len_msg)
+
+        check_len(prefix, 'prefix')
+        check_len(prefix_sep, 'prefix_sep')
+        if isinstance(prefix, string_types):
+            prefix = cycle([prefix])
+            prefix = [next(prefix) for i in range(len(columns))]
+        if isinstance(prefix, dict):
+            prefix = [prefix[col] for col in columns]
+
+        if prefix is None:
+            prefix = columns
+
+        # validate separators
+        if isinstance(prefix_sep, string_types):
+            prefix_sep = cycle([prefix_sep])
+            prefix_sep = [next(prefix_sep) for i in range(len(columns))]
+        elif isinstance(prefix_sep, dict):
+            prefix_sep = [prefix_sep[col] for col in columns]
+
+        numeric_indices = list(self.columns.get_indexer_for(columns))
+
+        def dummies_builder(df, internal_indices):
+            # TODO: apply_func_to_select_indices function is not iterating thru
+            # prefix and prefix_sep like it is for internal_indices
+            df.columns = pandas.RangeIndex(len(df.columns))
+            new_df = pandas.get_dummies(df,
+                                        # prefix=prefix,
+                                        # prefix_sep=prefix_sep,
+                                        dummy_na=dummy_na,
+                                        columns=internal_indices,
+                                        drop_first=drop_first)
+            return new_df
+
+        # func = self._prepare_method(lambda df : dummies_builder(df, prefix,
+        #     prefix_sep, temp_cols))
+        new_data = self.data.apply_func_to_select_indices_along_full_axis(axis=1,
+                func=dummies_builder, indices=numeric_indices,
+                keep_remaining=False)
+        # new_data = self.map_across_full_axis(axis=1, func=func)
+        # new_data = self.map_partitions(func)
+
+        # new_colums = self.compute_index(1, new_data, True)
+        # print(new_columns)
+        # TODO: change to above compute_index call once stuff is working
+        new_columns = pandas.Index(['0_a', '0_b', '0_c'], dtype='object')
+
+        return cls(new_data, self.index, new_columns)
 
     def groupby_agg(self, by, axis, agg_func, groupby_args={}, agg_args={}):
         remote_index = self.index if not axis else self.columns

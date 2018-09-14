@@ -3565,9 +3565,27 @@ def test_to_datetime():
 
 
 def test_get_dummies():
-    frame_data = {'A': ['a', 'b', 'a'], 'B': ['b', 'a', 'c'], 'C': [1, 2, 3]}
+    # s = pd.Series(list('abca'))
+    # print(pandas.get_dummies(s))
+    # a = pd.get_dummies(s)
+    # print("test")
+    # print(a.index)
+    # print(a.columns)
+    # a.columns = pandas.Index(['0_a', '0_b', '0_c'], dtype='object')
+    # print(a)
+    # assert False
+    # frame_data = {'A': ['a', 'b', 'a'], 'B': ['b', 'a', 'c'], 'C': [1, 2, 3]}
+    frame_data = {'A': ['a'], 'B': ['b']}
     ray_df = pd.DataFrame(frame_data)
     pd_df = pandas.DataFrame(frame_data)
+    print(ray_df)
+    print(pandas.get_dummies(pd_df))
+    a = pd.get_dummies(ray_df)
+    print(a.index)
+    print(a.columns)
+    print(a)
+    # print(pd.get_dummies(ray_df))
+    assert False
 
-    assert ray_df_equals_pandas(
-        pd.get_dummies(ray_df), pandas.get_dummies(pd_df))
+    # assert ray_df_equals_pandas(
+    #     pd.get_dummies(ray_df), pandas.get_dummies(pd_df))
