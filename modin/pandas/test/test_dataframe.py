@@ -10,6 +10,7 @@ import pandas.util.testing as tm
 from pandas.tests.frame.common import TestData
 import modin.pandas as pd
 from modin.pandas.utils import to_pandas
+from numpy.testing import assert_array_equal
 
 
 @pytest.fixture
@@ -144,7 +145,7 @@ def test_int_dataframe():
     test_cummin(ray_df, pandas_df)
     test_cumprod(ray_df, pandas_df)
     test_cumsum(ray_df, pandas_df)
-    #test_pipe(ray_df, pandas_df)
+    test_pipe(ray_df, pandas_df)
 
     test_loc(ray_df, pandas_df)
     test_iloc(ray_df, pandas_df)
@@ -301,7 +302,7 @@ def test_float_dataframe():
     test_cummin(ray_df, pandas_df)
     test_cumprod(ray_df, pandas_df)
     test_cumsum(ray_df, pandas_df)
-    #test_pipe(ray_df, pandas_df)
+    test_pipe(ray_df, pandas_df)
 
     test___len__(ray_df, pandas_df)
     test_first_valid_index(ray_df, pandas_df)
@@ -344,8 +345,7 @@ def test_float_dataframe():
         test_insert(ray_df, pandas_df, 1, "New Column", ray_df[key])
         test_insert(ray_df, pandas_df, 4, "New Column", ray_df[key])
 
-    # TODO Nans are always not equal to each other, fix it
-    # test___array__(ray_df, pandas_df)
+    test___array__(ray_df, pandas_df)
 
     apply_agg_functions = [
         'sum', lambda df: df.sum(), ['sum', 'mean'], ['sum', 'sum']
@@ -636,7 +636,7 @@ def test_nan_dataframe():
     test_cummin(ray_df, pandas_df)
     test_cumprod(ray_df, pandas_df)
     test_cumsum(ray_df, pandas_df)
-    #test_pipe(ray_df, pandas_df)
+    test_pipe(ray_df, pandas_df)
 
     test___len__(ray_df, pandas_df)
     test_first_valid_index(ray_df, pandas_df)
@@ -679,7 +679,7 @@ def test_nan_dataframe():
         test_insert(ray_df, pandas_df, 4, "New Column", ray_df[key])
 
     # TODO Nans are always not equal to each other, fix it
-    # test___array__(ray_df, pandas_df)
+    test___array__(ray_df, pandas_df)
 
     apply_agg_functions = [
         'sum', lambda df: df.sum(), ['sum', 'mean'], ['sum', 'sum']
@@ -3370,7 +3370,7 @@ def test___round__():
 
 @pytest.fixture
 def test___array__(ray_df, pandas_df):
-    assert np.array_equal(ray_df.__array__(), pandas_df.__array__())
+    assert_array_equal(ray_df.__array__(), pandas_df.__array__())
 
 
 def test___getstate__():
@@ -3450,29 +3450,22 @@ def test___repr__():
     frame_data = np.random.randint(0, 100, size=(1000, 100))
     pandas_df = pandas.DataFrame(frame_data)
     ray_df = pd.DataFrame(frame_data)
-
     assert repr(pandas_df) == repr(ray_df)
 
     frame_data = np.random.randint(0, 100, size=(1000, 99))
     pandas_df = pandas.DataFrame(frame_data)
     ray_df = pd.DataFrame(frame_data)
-
     assert repr(pandas_df) == repr(ray_df)
 
-    # These currently fails because the dots do not line up.
-    # For some reason only two dots are being added for our DataFrame
+    frame_data = np.random.randint(0, 100, size=(1000, 101))
+    pandas_df = pandas.DataFrame(frame_data)
+    ray_df = pd.DataFrame(frame_data)
+    assert repr(pandas_df) == repr(ray_df)
 
-    # frame_data = np.random.randint(0, 100, size=(1000, 101))
-    # pandas_df = pandas.DataFrame(frame_data)
-    # ray_df = pd.DataFrame(frame_data)
-    #
-    # assert repr(pandas_df) == repr(ray_df)
-    #
-    # frame_data = np.random.randint(0, 100, size=(1000, 102))
-    # pandas_df = pandas.DataFrame(frame_data)
-    # ray_df = pd.DataFrame(frame_data)
-    #
-    # assert repr(pandas_df) == repr(ray_df)
+    frame_data = np.random.randint(0, 100, size=(1000, 102))
+    pandas_df = pandas.DataFrame(frame_data)
+    ray_df = pd.DataFrame(frame_data)
+    assert repr(pandas_df) == repr(ray_df)
 
     # ___repr___ method has a different code path depending on
     # whether the number of rows is >60; and a different code path

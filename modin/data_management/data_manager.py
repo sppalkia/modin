@@ -1201,6 +1201,7 @@ class PandasDataManager(object):
             result._is_transposed = True
         else:
             result = cls(self.data.take(0, -n), self.index[-n:], self.columns, self._dtype_cache)
+
         return result
 
     def front(self, n):

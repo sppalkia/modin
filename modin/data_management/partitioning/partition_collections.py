@@ -233,17 +233,20 @@ class BlockPartitions(object):
                 remaining = int(n - length_bins[idx - 1])
             else:
                 remaining = n
-
-            # Reverse for ease of iteration and then re-reverse at the end
-            partitions = partitions[::-1]
-            # We build this iloc to avoid creating a bunch of helper methods.
-            # This code creates slice objects to be passed to `iloc` to grab
-            # the last n rows or columns depending on axis.
-            slice_obj = slice(-remaining, int(self.block_lengths[0])) if axis == 0 else (slice(int(self.block_lengths[0])), slice(-remaining, int(self.block_widths[0])))
-            func = self.preprocess_func(lambda df: df.iloc[slice_obj])
-            # We use idx + 1 here because the loop is not inclusive, and we
-            # need to iterate through idx.
-            result = np.array([partitions[i] if i != idx else [obj.apply(func) for obj in partitions[i]] for i in range(idx + 1)])[::-1]
+            # In this case, we require no remote compute. This is much faster.
+            if remaining == 0:
+                result = partitions[-idx:]
+            else:
+                # Reverse for ease of iteration and then re-reverse at the end
+                partitions = partitions[::-1]
+                # We build this iloc to avoid creating a bunch of helper methods.
+                # This code creates slice objects to be passed to `iloc` to grab
+                # the last n rows or columns depending on axis.
+                slice_obj = slice(-remaining, None) if axis == 0 else (slice(None), slice(-remaining, None))
+                func = self.preprocess_func(lambda df: df.iloc[slice_obj])
+                # We use idx + 1 here because the loop is not inclusive, and we
+                # need to iterate through idx.
+                result = np.array([partitions[i] if i != idx else [obj.apply(func) for obj in partitions[i]] for i in range(idx + 1)])[::-1]
         else:
             length_bins = np.cumsum(bin_lengths)
             idx = int(np.digitize(n, length_bins))
@@ -251,13 +254,17 @@ class BlockPartitions(object):
                 remaining = int(n - length_bins[idx - 1])
             else:
                 remaining = n
-            # We build this iloc to avoid creating a bunch of helper methods.
-            # This code creates slice objects to be passed to `iloc` to grab
-            # the first n rows or columns depending on axis.
-            slice_obj = slice(remaining) if axis == 0 else (slice(int(self.block_lengths[0])), slice(remaining))
-            func = self.preprocess_func(lambda df: df.iloc[slice_obj])
-            # See note above about idx + 1
-            result = np.array([partitions[i] if i != idx else [obj.apply(func) for obj in partitions[i]] for i in range(idx + 1)])
+            # In this case, we require no remote compute. This is much faster.
+            if remaining == 0:
+                result = partitions[:idx]
+            else:
+                # We build this iloc to avoid creating a bunch of helper methods.
+                # This code creates slice objects to be passed to `iloc` to grab
+                # the first n rows or columns depending on axis.
+                slice_obj = slice(remaining) if axis == 0 else (slice(None), slice(remaining))
+                func = self.preprocess_func(lambda df: df.iloc[slice_obj])
+                # See note above about idx + 1
+                result = np.array([partitions[i] if i != idx else [obj.apply(func) for obj in partitions[i]] for i in range(idx + 1)])
 
         return cls(result.T) if axis else cls(result)
 
