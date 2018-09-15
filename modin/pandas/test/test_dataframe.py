@@ -146,8 +146,8 @@ def test_int_dataframe():
     test_cumsum(ray_df, pandas_df)
     test_pipe(ray_df, pandas_df)
 
-    # test_loc(ray_df, pandas_df)
-    # test_iloc(ray_df, pandas_df)
+    test_loc(ray_df, pandas_df)
+    test_iloc(ray_df, pandas_df)
 
     labels = ['a', 'b', 'c', 'd']
     test_set_axis(ray_df, pandas_df, labels, 0)
@@ -1120,30 +1120,28 @@ def test_assign():
 
 def test_astype():
     td = TestData()
-    ray_df = pd.DataFrame(td.frame)
-    our_df_casted = ray_df.astype(np.int32)
-    expected_df_casted = pandas.DataFrame(
-        td.frame.values.astype(np.int32),
+    ray_df = pd.DataFrame(td.frame.values,
+            index=td.frame.index,
+            columns=td.frame.columns)
+    expected_df = pandas.DataFrame(
+        td.frame.values,
         index=td.frame.index,
         columns=td.frame.columns)
 
-    assert ray_df_equals_pandas(our_df_casted, expected_df_casted)
+    ray_df_casted = ray_df.astype(np.int32)
+    expected_df_casted = expected_df.astype(np.int32)
 
-    our_df_casted = ray_df.astype(np.float64)
-    expected_df_casted = pandas.DataFrame(
-        td.frame.values.astype(np.float64),
-        index=td.frame.index,
-        columns=td.frame.columns)
+    assert ray_df_equals_pandas(ray_df_casted, expected_df_casted)
 
-    assert ray_df_equals_pandas(our_df_casted, expected_df_casted)
+    ray_df_casted = ray_df.astype(np.float64)
+    expected_df_casted = expected_df.astype(np.float64)
 
-    our_df_casted = ray_df.astype(str)
-    expected_df_casted = pandas.DataFrame(
-        td.frame.values.astype(str),
-        index=td.frame.index,
-        columns=td.frame.columns)
+    assert ray_df_equals_pandas(ray_df_casted, expected_df_casted)
 
-    assert ray_df_equals_pandas(our_df_casted, expected_df_casted)
+    ray_df_casted = ray_df.astype(str)
+    expected_df_casted = expected_df.astype(str)
+
+    assert ray_df_equals_pandas(ray_df_casted, expected_df_casted)
 
 
 def test_at_time():
@@ -1536,7 +1534,20 @@ def test_eval_df_use_case():
     df = pandas.DataFrame(frame_data)
     ray_df = pd.DataFrame(frame_data)
 
-    # Very hacky test to test eval while inplace is not working
+    # test eval for series results
+    tmp_pandas = df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+    tmp_ray = ray_df.eval(
+        "arctan2(sin(a), b)",
+        engine='python',
+        parser='pandas')
+
+    assert isinstance(tmp_ray, pandas.Series)
+    assert ray_series_equals_pandas(tmp_ray, tmp_pandas)
+
+    # Test not inplace assignments
     tmp_pandas = df.eval(
         "e = arctan2(sin(a), b)",
         engine='python',
@@ -1547,6 +1558,7 @@ def test_eval_df_use_case():
         parser='pandas')
     assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
 
+    # Test inplace assignments
     df.eval(
         "e = arctan2(sin(a), b)",
         engine='python',
@@ -1571,24 +1583,6 @@ def test_eval_df_arithmetic_subexpression():
         "not_e = sin(a + b)", engine='python', parser='pandas', inplace=True)
     # TODO: Use a series equality validator.
     assert ray_df_equals_pandas(ray_df, df)
-
-
-def test_eval_df_series_result():
-    frame_data = {'a': np.random.randn(10), 'b': np.random.randn(10)}
-    df = pandas.DataFrame(frame_data)
-    ray_df = pd.DataFrame(frame_data)
-
-    # Very hacky test to test eval while inplace is not working
-    tmp_pandas = df.eval(
-        "arctan2(sin(a), b)",
-        engine='python',
-        parser='pandas')
-    tmp_ray = ray_df.eval(
-        "arctan2(sin(a), b)",
-        engine='python',
-        parser='pandas')
-    assert ray_df_equals_pandas(tmp_ray, tmp_pandas)
-    assert isinstance(to_pandas(tmp_ray), pandas.Series)
 
 
 def test_ewm():
