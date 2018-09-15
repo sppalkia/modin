@@ -3199,12 +3199,10 @@ def test_unstack():
 def test_update():
     df = pd.DataFrame([[1.5, np.nan, 3.], [1.5, np.nan, 3.], [1.5, np.nan, 3],
                        [1.5, np.nan, 3]])
-
     other = pd.DataFrame(
         [[3.6, 2., np.nan], [np.nan, np.nan, 7]], index=[1, 3])
 
     df.update(other)
-
     expected = pd.DataFrame([[1.5, np.nan, 3], [3.6, 2, 3], [1.5, np.nan, 3],
                              [1.5, np.nan, 7.]])
     assert ray_df_equals(df, expected)
@@ -3219,37 +3217,26 @@ def test_where():
     frame_data = np.random.randn(100, 10)
     pandas_df = pandas.DataFrame(frame_data, columns=list('abcdefghij'))
     ray_df = pd.DataFrame(frame_data, columns=list('abcdefghij'))
-
     pandas_cond_df = pandas_df % 5 < 2
     ray_cond_df = ray_df % 5 < 2
 
     pandas_result = pandas_df.where(pandas_cond_df, -pandas_df)
     ray_result = ray_df.where(ray_cond_df, -ray_df)
-
     assert all((to_pandas(ray_result) == pandas_result).all())
-    # assert ray_df_equals_pandas(ray_result, pandas_result)
 
     other = pandas_df.loc[3]
-
     pandas_result = pandas_df.where(pandas_cond_df, other, axis=1)
     ray_result = ray_df.where(ray_cond_df, other, axis=1)
-
     assert all((to_pandas(ray_result) == pandas_result).all())
-    # assert ray_df_equals_pandas(ray_result, pandas_result)
 
     other = pandas_df['e']
-
     pandas_result = pandas_df.where(pandas_cond_df, other, axis=0)
     ray_result = ray_df.where(ray_cond_df, other, axis=0)
-
     assert all((to_pandas(ray_result) == pandas_result).all())
-    # assert ray_df_equals_pandas(ray_result, pandas_result)
 
     pandas_result = pandas_df.where(pandas_df < 2, True)
     ray_result = ray_df.where(ray_df < 2, True)
-
     assert all((to_pandas(ray_result) == pandas_result).all())
-    # assert ray_df_equals_pandas(ray_result, pandas_result)
 
 
 def test_xs():

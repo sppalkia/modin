@@ -438,6 +438,10 @@ class PandasDataManager(object):
             return cls(final_pass, self.index, self.columns)
         else:
             axis = kwargs.get("axis", 0)
+            # Rather than serializing and passing in the index/columns, we will
+            # just change this index to match the internal index.
+            if isinstance(other, pandas.Series):
+                other.index = [i for i in range(len(other))]
 
             def where_builder_series(df, cond, other, **kwargs):
                 return df.where(cond, other, **kwargs)

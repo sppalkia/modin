@@ -4016,7 +4016,6 @@ class DataFrame(object):
 
         elif isinstance(other, pandas.Series):
             other = other.reindex(self.index if not axis else self.columns)
-
         else:
             index = self.index if not axis else self.columns
             other = pandas.Series(other, index=index)
