@@ -189,7 +189,6 @@ def _read_csv_from_pandas(filepath_or_buffer, kwargs):
         pd_read = pd_obj.read
         pd_obj.read = lambda *args, **kwargs: \
             from_pandas(pd_read(*args, **kwargs))
-
     return pd_obj
 
 
@@ -262,7 +261,8 @@ def read_csv(filepath_or_buffer,
     # number of nodes in the cluster.
     frame = inspect.currentframe()
     _, _, _, kwargs = inspect.getargvalues(frame)
-    _, _, _, defaults, _, _, _ = inspect.getfullargspec(read_csv)
+    args, _, _, defaults, _, _, _ = inspect.getfullargspec(read_csv)
+    defaults = dict(zip(args[1:], defaults))
     kwargs = {kw: kwargs[kw] for kw in kwargs if kw in defaults and kwargs[kw] != defaults[kw]}
 
     if isinstance(filepath_or_buffer, str):
@@ -270,7 +270,6 @@ def read_csv(filepath_or_buffer,
             warnings.warn(("File not found on disk. "
                            "Defaulting to Pandas implementation."),
                           PendingDeprecationWarning)
-
             return _read_csv_from_pandas(filepath_or_buffer, kwargs)
     elif not isinstance(filepath_or_buffer, py.path.local):
         read_from_pandas = True
@@ -287,27 +286,23 @@ def read_csv(filepath_or_buffer,
             warnings.warn(("Reading from buffer. "
                            "Defaulting to Pandas implementation."),
                           PendingDeprecationWarning)
-
             return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
     if _infer_compression(filepath_or_buffer, compression) is not None:
         warnings.warn(("Compression detected. "
                        "Defaulting to Pandas implementation."),
                       PendingDeprecationWarning)
-
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
     if as_recarray:
         warnings.warn("Defaulting to Pandas implementation.",
                       PendingDeprecationWarning)
-
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
     if chunksize is not None:
         warnings.warn(("Reading chunks from a file. "
                        "Defaulting to Pandas implementation."),
                       PendingDeprecationWarning)
-
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
     if skiprows is not None and not isinstance(skiprows, int):
@@ -321,7 +316,6 @@ def read_csv(filepath_or_buffer,
     if nrows is not None:
         warnings.warn("Defaulting to Pandas implementation.",
                       PendingDeprecationWarning)
-
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
     return _read_csv_from_file_pandas_on_ray(filepath_or_buffer, get_npartitions(), kwargs)
