@@ -21,11 +21,7 @@ import re
 import sys
 import warnings
 
-from .utils import (from_pandas, to_pandas, _blocks_to_col, _blocks_to_row,
-                    _create_block_partitions, _fix_blocks_dimensions,
-                    _inherit_docstrings)
-from ..data_management.data_manager import RayPandasDataManager
-from .index_metadata import _IndexMetadata
+from .utils import (from_pandas, to_pandas, _inherit_docstrings)
 from .iterator import PartitionIterator
 
 
@@ -38,11 +34,6 @@ class DataFrame(object):
                  columns=None,
                  dtype=None,
                  copy=False,
-                 col_partitions=None,
-                 row_partitions=None,
-                 block_partitions=None,
-                 row_metadata=None,
-                 col_metadata=None,
                  data_manager=None):
         """Distributed DataFrame object backed by Pandas dataframes.
 
@@ -57,26 +48,15 @@ class DataFrame(object):
             dtype: Data type to force. Only a single dtype is allowed.
                 If None, infer
             copy (boolean): Copy data from inputs.
-                Only affects DataFrame / 2d ndarray input
-            col_partitions ([ObjectID]): The list of ObjectIDs that contain
-                the column DataFrame partitions.
-            row_partitions ([ObjectID]): The list of ObjectIDs that contain the
-                row DataFrame partitions.
-            block_partitions: A 2D numpy array of block partitions.
-            row_metadata (_IndexMetadata):
-                Metadata for the new DataFrame's rows
-            col_metadata (_IndexMetadata):
-                Metadata for the new DataFrame's columns
+                Only affects DataFrame / 2d ndarray input.
+            data_manager: A manager object to manage distributed computation.
         """
         if isinstance(data, DataFrame):
             self._data_manager = data._data_manager
             return
 
         # Check type of data and use appropriate constructor
-        if data is not None or (col_partitions is None
-                                and row_partitions is None
-                                and block_partitions is None
-                                and data_manager is None):
+        if data is not None or data_manager is None:
 
             pandas_df = pandas.DataFrame(
                 data=data,
@@ -87,72 +67,7 @@ class DataFrame(object):
 
             self._data_manager = from_pandas(pandas_df)._data_manager
         else:
-            if data_manager is not None:
-                self._data_manager = data_manager
-            else:
-                # created this invariant to make sure we never have to go into the
-                # partitions to get the columns
-                assert columns is not None or col_metadata is not None, \
-                    "Columns not defined, must define columns or col_metadata " \
-                    "for internal DataFrame creations"
-
-                if block_partitions is not None:
-                    axis = 0
-                    # put in numpy array here to make accesses easier since it's 2D
-                    self._block_partitions = np.array(block_partitions)
-                    self._block_partitions = \
-                        _fix_blocks_dimensions(self._block_partitions, axis)
-
-                else:
-                    if row_partitions is not None:
-                        axis = 0
-                        partitions = row_partitions
-                    else:
-                        axis = 1
-                        partitions = col_partitions
-
-                    # TODO: write explicit tests for "short and wide"
-                    # column partitions
-                    self._block_partitions = \
-                        _create_block_partitions(partitions, axis=axis)
-
-                self._data_manager = RayPandasDataManager._from_old_block_partitions(self._block_partitions, index, columns)
-
-    def _get_row_partitions(self):
-        empty_rows_mask = self._row_metadata._lengths > 0
-        if any(empty_rows_mask):
-            self._row_metadata._lengths = \
-                self._row_metadata._lengths[empty_rows_mask]
-            self._block_partitions = self._block_partitions[empty_rows_mask, :]
-        return [
-            _blocks_to_row.remote(*part)
-            for i, part in enumerate(self._block_partitions)
-        ]
-
-    def _set_row_partitions(self, new_row_partitions):
-        self._block_partitions = \
-            _create_block_partitions(new_row_partitions, axis=0,
-                                     length=len(self.columns))
-
-    _row_partitions = property(_get_row_partitions, _set_row_partitions)
-
-    def _get_col_partitions(self):
-        empty_cols_mask = self._col_metadata._lengths > 0
-        if any(empty_cols_mask):
-            self._col_metadata._lengths = \
-                self._col_metadata._lengths[empty_cols_mask]
-            self._block_partitions = self._block_partitions[:, empty_cols_mask]
-        return [
-            _blocks_to_col.remote(*self._block_partitions[:, i])
-            for i in range(self._block_partitions.shape[1])
-        ]
-
-    def _set_col_partitions(self, new_col_partitions):
-        self._block_partitions = \
-            _create_block_partitions(new_col_partitions, axis=1,
-                                     length=len(self.index))
-
-    _col_partitions = property(_get_col_partitions, _set_col_partitions)
+            self._data_manager = data_manager
 
     def __str__(self):
         return repr(self)

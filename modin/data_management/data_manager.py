@@ -1469,14 +1469,6 @@ class PandasDataManager(object):
         return self.data.manual_shuffle(axis, func)
 
 
-class RayPandasDataManager(PandasDataManager):
-
-    @classmethod
-    def _from_old_block_partitions(cls, blocks, index, columns):
-        blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
-        return PandasDataManager(RayBlockPartitions(blocks), index, columns)
-
-
 def pandas_index_extraction(df, axis):
     if not axis:
         return df.index

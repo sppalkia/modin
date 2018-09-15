@@ -4,8 +4,6 @@ from __future__ import print_function
 
 import pandas
 
-import numpy as np
-
 from .dataframe import DataFrame
 
 

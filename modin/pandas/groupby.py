@@ -12,7 +12,7 @@ import ray
 
 from .concat import concat
 from .index_metadata import _IndexMetadata
-from .utils import _inherit_docstrings, _reindex_helper, post_task_gc
+from .utils import _inherit_docstrings, post_task_gc
 
 
 @_inherit_docstrings(

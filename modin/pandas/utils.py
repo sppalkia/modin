@@ -10,7 +10,6 @@ import ray
 import time
 import gc
 
-from . import get_npartitions
 from ..data_management.factories import BaseFactory
 
 _NAN_BLOCKS = {}
@@ -159,47 +158,6 @@ def _get_nan_block_id(n_row=1, n_col=1, transpose=False):
     return _NAN_BLOCKS[shape]
 
 
-def _partition_pandas_dataframe(df, num_partitions=None, row_chunksize=None):
-    """Partitions a Pandas DataFrame object.
-    Args:
-        df (pandas.DataFrame): The pandas DataFrame to convert.
-        npartitions (int): The number of partitions to split the DataFrame
-            into. Has priority over chunksize.
-        row_chunksize (int): The number of rows to put in each partition.
-    Returns:
-        [ObjectID]: A list of object IDs corresponding to the DataFrame
-        partitions
-    """
-    if num_partitions is not None:
-        row_chunksize = len(df) // num_partitions \
-            if len(df) % num_partitions == 0 \
-            else len(df) // num_partitions + 1
-    else:
-        assert row_chunksize is not None
-
-    temp_df = df
-
-    row_partitions = []
-    while len(temp_df) > row_chunksize:
-        t_df = temp_df[:row_chunksize]
-        # reset_index here because we want a pandas.RangeIndex
-        # within the partitions. It is smaller and sometimes faster.
-        t_df.reset_index(drop=True, inplace=True)
-        t_df.columns = pandas.RangeIndex(0, len(t_df.columns))
-        top = ray.put(t_df)
-        row_partitions.append(top)
-        temp_df = temp_df[row_chunksize:]
-    else:
-        # Handle the last chunk correctly.
-        # This call is necessary to prevent modifying original df
-        temp_df = temp_df[:]
-        temp_df.reset_index(drop=True, inplace=True)
-        temp_df.columns = pandas.RangeIndex(0, len(temp_df.columns))
-        row_partitions.append(ray.put(temp_df))
-
-    return row_partitions
-
-
 def from_pandas(df):
     """Converts a pandas DataFrame to a Ray DataFrame.
     Args:
@@ -310,56 +268,6 @@ def _mask_block_partitions(blk_partitions, row_metadata, col_metadata):
     return np.array(result_oids).reshape(shape)
 
 
-def _create_block_partitions(partitions, axis=0, length=None):
-
-    if length is not None and length != 0 and get_npartitions() > length:
-        npartitions = length
-    elif length == 0:
-        npartitions = 1
-    else:
-        npartitions = get_npartitions()
-
-    x = [
-        create_blocks._submit(
-            args=(partition, npartitions, axis), num_return_vals=npartitions)
-        for partition in partitions
-    ]
-
-    # In the case that axis is 1 we have to transpose because we build the
-    # columns into rows. Fortunately numpy is efficient at this.
-    blocks = np.array(x) if axis == 0 else np.array(x).T
-
-    # Sometimes we only get a single column or row, which is
-    # problematic for building blocks from the partitions, so we
-    # add whatever dimension we're missing from the input.
-    return _fix_blocks_dimensions(blocks, axis)
-
-
-def _create_blocks_helper(df, npartitions, axis):
-    # Single partition dataframes don't need to be repartitioned
-    if npartitions == 1:
-        return df
-    # In the case that the size is not a multiple of the number of partitions,
-    # we need to add one to each partition to avoid losing data off the end
-    block_size = df.shape[axis ^ 1] // npartitions \
-        if df.shape[axis ^ 1] % npartitions == 0 \
-        else df.shape[axis ^ 1] // npartitions + 1
-
-    # if not isinstance(df.columns, pandas.RangeIndex):
-    #     df.columns = pandas.RangeIndex(0, len(df.columns))
-
-    blocks = [
-        df.iloc[:, i * block_size:(i + 1) * block_size]
-        if axis == 0 else df.iloc[i * block_size:(i + 1) * block_size, :]
-        for i in range(npartitions)
-    ]
-
-    for block in blocks:
-        block.columns = pandas.RangeIndex(0, len(block.columns))
-        block.reset_index(inplace=True, drop=True)
-    return blocks
-
-
 def _inherit_docstrings(parent, excluded=[]):
     """Creates a decorator which overwrites a decorated class' __doc__
     attribute with parent's __doc__ attribute. Also overwrites __doc__ of
@@ -448,11 +356,6 @@ def writer(df_chunk, row_loc, col_loc, item):
     return df_chunk
 
 
-@ray.remote
-def create_blocks(df, npartitions, axis):
-    return _create_blocks_helper(df, npartitions, axis)
-
-
 @memoize
 @ray.remote
 def _blocks_to_series(*partition):
@@ -464,30 +367,6 @@ def _blocks_to_series(*partition):
     partition = [pandas.Series(p.squeeze()) for p in partition]
     series = pandas.concat(partition)
     return series
-
-
-@memoize
-@ray.remote
-def _blocks_to_col(*partition):
-    if len(partition):
-        return pandas.concat(partition, axis=0, copy=False)\
-            .reset_index(drop=True)
-    else:
-        return pandas.DataFrame()
-
-
-@memoize
-@ray.remote
-def _blocks_to_row(*partition):
-    if len(partition):
-        row_part = pandas.concat(partition, axis=1, copy=False)\
-            .reset_index(drop=True)
-        # Because our block partitions contain different indices (for the
-        # columns), this change is needed to ensure correctness.
-        row_part.columns = pandas.RangeIndex(0, len(row_part.columns))
-        return row_part
-    else:
-        return pandas.DataFrame()
 
 
 @ray.remote
