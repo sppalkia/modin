@@ -702,7 +702,10 @@ class DataFrame(object):
         # If ignore_index is False, by definition the Index will be correct.
         # We also do this first to ensure that we don't waste compute/memory.
         if verify_integrity and not ignore_index:
-            raise NotImplementedError("Implement this!")
+            appended_index = self.index.append(other.index)
+            is_valid = next((False for idx in appended_index.duplicated() if idx), True)
+            if not is_valid:
+                raise ValueError("Indexes have overlapping values: {}".format(appended_index[appended_index.duplicated()]))
 
         data_manager = self._data_manager.concat(0, other, ignore_index=ignore_index)
         return DataFrame(data_manager=data_manager)
