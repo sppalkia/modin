@@ -100,6 +100,15 @@ class PandasDataManager(object):
         Returns:
             A new pandas.Index object.
         """
+        def pandas_index_extraction(df, axis):
+            if not axis:
+                return df.index
+            else:
+                try:
+                    return df.columns
+                except AttributeError:
+                    return pandas.Index([])
+
         index_obj = self.index if not axis else self.columns
         old_blocks = self.data if compute_diff else None
         new_indices = data_object.get_indices(axis=axis, index_func=lambda df: pandas_index_extraction(df, axis), old_blocks=old_blocks)
@@ -1472,12 +1481,8 @@ class PandasDataManager(object):
         func = self._prepare_method(repartition_func, **kwargs)
         return self.data.manual_shuffle(axis, func)
 
-
-def pandas_index_extraction(df, axis):
-    if not axis:
-        return df.index
-    else:
-        try:
-            return df.columns
-        except AttributeError:
-            return pandas.Index([])
+    def groupby_agg(self, by, axis, agg_func, groupby_args={}, agg_args={}):
+        func_prepared = self._prepare_method(lambda df: agg_func(df.groupby(by=by, axis=axis, **groupby_args), **agg_args))
+        result_data = self.map_across_full_axis(axis, func_prepared)
+        return self._post_process_apply(result_data, axis)
+    # END Manual Partitioning methods

@@ -17,7 +17,7 @@ if sys.version_info.major < 3:
 @pytest.fixture
 def ray_df_equals_pandas(ray_df, pandas_df):
     assert isinstance(ray_df, pd.DataFrame)
-    assert to_pandas(ray_df).equals(pandas_df)
+    assert to_pandas(ray_df).equals(pandas_df) or (all(ray_df.isna().all()) and all(pandas_df.isna().all()))
 
 
 @pytest.fixture
@@ -404,6 +404,8 @@ def test_ndim(ray_groupby, pandas_groupby):
 @pytest.fixture
 def test_cumsum(ray_groupby, pandas_groupby):
     ray_df_equals_pandas(ray_groupby.cumsum(), pandas_groupby.cumsum())
+    print(ray_groupby.cumsum(axis=1))
+    print(pandas_groupby.cumsum(axis=1))
     ray_df_equals_pandas(
         ray_groupby.cumsum(axis=1), pandas_groupby.cumsum(axis=1))
 
