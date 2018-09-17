@@ -16,7 +16,6 @@ import warnings
 import numpy as np
 
 from .dataframe import ray, DataFrame
-from . import get_npartitions
 from .utils import from_pandas
 from ..data_management.partitioning.partition_collections import RayBlockPartitions
 from ..data_management.partitioning.remote_partition import RayRemotePartition
@@ -118,7 +117,7 @@ def _skip_header(f, kwargs={}):
     return lines_read
 
 
-def _read_csv_from_file_pandas_on_ray(filepath, npartitions, kwargs={}):
+def _read_csv_from_file_pandas_on_ray(filepath, kwargs={}):
     """Constructs a DataFrame from a CSV file.
 
     Args:
@@ -155,8 +154,8 @@ def _read_csv_from_file_pandas_on_ray(filepath, npartitions, kwargs={}):
         partition_ids = []
         index_ids = []
         total_bytes = os.path.getsize(filepath)
-        chunk_size = max(1, (total_bytes - f.tell()) // npartitions)
         num_splits = min(len(column_names), RayBlockPartitions._compute_num_partitions())
+        chunk_size = max(1, (total_bytes - f.tell()) // num_splits)
 
         while f.tell() < total_bytes:
             start = f.tell()
@@ -325,7 +324,7 @@ def read_csv(filepath_or_buffer,
                       PendingDeprecationWarning)
         return _read_csv_from_pandas(filepath_or_buffer, kwargs)
 
-    return _read_csv_from_file_pandas_on_ray(filepath_or_buffer, get_npartitions(), kwargs)
+    return _read_csv_from_file_pandas_on_ray(filepath_or_buffer, kwargs)
 
 
 def read_json(path_or_buf=None,

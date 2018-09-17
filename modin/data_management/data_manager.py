@@ -1607,7 +1607,6 @@ class PandasDataManager(object):
         elif axis in ['col', 'columns']:
             return pandas.Index(pandas.Series(np.arange(len(self.columns)), index=self.columns).loc[indices].values)
 
-
     def enlarge_partitions(self, new_row_labels=None, new_col_labels=None):
         new_data = self.data.enlarge_partitions(len(new_row_labels), len(new_col_labels))
         concated_index = self.index.append(type(self.index)(new_row_labels)) if new_row_labels else self.index
@@ -1644,7 +1643,6 @@ class PandasDataManagerView(PandasDataManager):
 
         PandasDataManager.__init__(self, block_partitions_object, index, columns, dtypes)
 
-
     def clone(self, block_partitions_object: BlockPartitions, index: pandas.Index,
                  columns: pandas.Index, dtypes=None):
         new_index_map = self.index_map.reindex(index)
@@ -1660,7 +1658,6 @@ class PandasDataManagerView(PandasDataManager):
         def iloc(partition, row_internal_indices, col_internal_indices):
             return partition.iloc[row_internal_indices, col_internal_indices]
 
-
         masked_data = self.parent_data.apply_func_to_indices_both_axis(func=iloc,
                                                                        row_indices=self.index_map.values,
                                                                        col_indices=self.columns_map.values,
@@ -1668,7 +1665,6 @@ class PandasDataManagerView(PandasDataManager):
                                                                        keep_remaining=False)
 
         return masked_data
-
 
     def _set_data(self, new_data):
         """Note this setter will be called by the `super(PandasDataManagerView).__init__` function"""
@@ -1684,20 +1680,9 @@ class PandasDataManagerView(PandasDataManager):
             return self.columns_map.loc[indices].index
 
 
-
 class RayPandasDataManager(PandasDataManager):
 
     @classmethod
     def _from_old_block_partitions(cls, blocks, index, columns):
         blocks = np.array([[RayRemotePartition(obj) for obj in row] for row in blocks])
         return PandasDataManager(RayBlockPartitions(blocks), index, columns)
-
-
-def pandas_index_extraction(df, axis):
-    if not axis:
-        return df.index
-    else:
-        try:
-            return df.columns
-        except AttributeError:
-            return pandas.Index([])
