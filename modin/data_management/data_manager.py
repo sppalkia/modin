@@ -155,12 +155,12 @@ class PandasDataManager(object):
     def add_prefix(self, prefix):
         cls = type(self)
         new_column_names = self.columns.map(lambda x: str(prefix) + str(x))
-        return cls(self.data, self.index, new_column_names, self.dtypes)
+        return cls(self.data, self.index, new_column_names, self._dtype_cache)
 
     def add_suffix(self, suffix):
         cls = type(self)
         new_column_names = self.columns.map(lambda x: str(x) + str(suffix))
-        return cls(self.data, self.index, new_column_names, self.dtypes)
+        return cls(self.data, self.index, new_column_names, self._dtype_cache)
     # END Metadata modification methods
 
     # Copy
@@ -169,7 +169,7 @@ class PandasDataManager(object):
     # to prevent that.
     def copy(self):
         cls = type(self)
-        return cls(self.data.copy(), self.index.copy(), self.columns.copy(), self.dtypes.copy())
+        return cls(self.data.copy(), self.index.copy(), self.columns.copy(), self._dtype_cache)
 
     # Append/Concat/Join (Not Merge)
     # The append/concat/join operations should ideally never trigger remote
@@ -527,7 +527,7 @@ class PandasDataManager(object):
         else:
             # The copies here are to ensure that we do not give references to
             # this object for the purposes of updates.
-            return cls(self.data.copy(), new_index, self.columns.copy(), self.dtypes.copy())
+            return cls(self.data.copy(), new_index, self.columns.copy(), self._dtype_cache)
     # END Reindex/reset_index
 
     # Transpose
@@ -677,7 +677,7 @@ class PandasDataManager(object):
 
     def round(self, **kwargs):
         func = self._prepare_method(pandas.DataFrame.round, **kwargs)
-        return self.map_partitions(func, new_dtypes=self.dtypes.copy())
+        return self.map_partitions(func, new_dtypes=self._dtype_cache)
     # END Map partitions operations
 
     # Column/Row partitions reduce operations
@@ -924,7 +924,7 @@ class PandasDataManager(object):
         axis = kwargs.get("axis", 0)
         func = self._prepare_method(func, **kwargs)
         new_data = self.map_across_full_axis(axis, func)
-        return cls(new_data, self.index, self.columns, self.dtypes)
+        return cls(new_data, self.index, self.columns, self._dtype_cache)
 
     def cumsum(self, **kwargs):
         return self._cumulative_builder(pandas.DataFrame.cumsum, **kwargs)
@@ -1046,7 +1046,7 @@ class PandasDataManager(object):
         # We build these intermediate objects to avoid depending directly on
         # the underlying implementation.
         final_data = cls(new_data, new_index, new_columns).map_across_full_axis(axis, lambda df: df.reindex(axis=axis, labels=final_labels))
-        return cls(final_data, new_index, new_columns, self.dtypes)
+        return cls(final_data, new_index, new_columns, self._dtype_cache)
 
     def fillna(self, **kwargs):
         cls = type(self)
@@ -1292,7 +1292,7 @@ class PandasDataManager(object):
         # We can't just set the index to key here because there may be multiple
         # instances of a key.
         new_index = self.index[numeric_indices]
-        return cls(result, new_index, self.columns, self.dtypes)
+        return cls(result, new_index, self.columns, self._dtype_cache)
     # END __getitem__ methods
 
     # __delitem__ and drop
