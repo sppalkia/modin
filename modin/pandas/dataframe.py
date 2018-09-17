@@ -1724,22 +1724,10 @@ class DataFrame(object):
         # Create the Index info() string by parsing self.index
         index_string = index.summary() + '\n'
 
-        if memory_usage or null_counts:
-            results_data = self._data_manager.info(
-                    verbose=actually_verbose,
-                    buf=buf,
-                    max_cols=max_cols,
-                    memory_usage=memory_usage,
-                    null_counts=null_counts
-                    )
-            if null_counts:
-                # For some reason, the counts table has a shape of (columns, columns)
-                counts = results_data['count']
-                counts.columns = columns
-            if memory_usage:
-                # For some reason, the memory table has a shape of (columns, columns)
-                # but it doesn't matter because the cells not on the diagonal are NaN
-                memory_usage_data = results_data['memory'].sum() + index.memory_usage(deep=memory_usage_deep)
+        if null_counts:
+            counts = self._data_manager.count()
+        if memory_usage:
+            memory_usage_data = self._data_manager.memory_usage(deep=memory_usage_deep, index=True)
 
         if actually_verbose:
             # Create string for verbose output
@@ -1748,7 +1736,7 @@ class DataFrame(object):
             for col, dtype in zip(columns, dtypes):
                 col_string += '{0}\t'.format(col)
                 if null_counts:
-                    col_string += '{0} not-null '.format(counts.loc[col, col])
+                    col_string += '{0} not-null '.format(counts[col])
                 col_string += '{0}\n'.format(dtype)
         else:
             # Create string for not verbose output

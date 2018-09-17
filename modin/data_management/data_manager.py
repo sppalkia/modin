@@ -756,26 +756,6 @@ class PandasDataManager(object):
         # have to do a conversion.
         return self._post_process_idx_ops(axis, min_result)
 
-    def info(self, **kwargs):
-        def info_builder(df, **kwargs):
-            result = pandas.DataFrame()
-            if memory_usage:
-                result['memory'] = df.memory_usage(index=False, deep=memory_usage_deep)
-            if null_counts:
-                result['count'] = df.count(axis=0)
-            return result
-
-        memory_usage = kwargs.get('memory_usage', True)
-        null_counts = kwargs.get('null_counts', True)
-
-        if type(memory_usage) == str and memory_usage == 'deep':
-            memory_usage_deep = True
-        else:
-            memory_usage_deep = False
-
-        func = self._prepare_method(info_builder, **kwargs)
-        return self.full_axis_reduce(func, 0)
-
     def last_valid_index(self):
 
         def last_valid_index_builder(df):
