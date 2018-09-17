@@ -56,14 +56,13 @@ def get_dummies(data,
         df = data
     elif is_list_like(data):
         df = DataFrame(data)
+    # if columns is None:
+    #     columns_to_encode = df.dtypes.isin([np.dtype("O"), 'category'])
+    #     columns_to_encode = df.columns[columns_to_encode]
+    # else:
+    #     columns_to_encode = columns
 
-    if columns is None:
-        columns_to_encode = df.dtypes.isin([np.dtype("O"), 'category'])
-        columns_to_encode = df.columns[columns_to_encode]
-    else:
-        columns_to_encode = columns
-
-    new_manager = df._data_manager.get_dummies(columns_to_encode,
+    new_manager = df._data_manager.get_dummies(columns,
                                                prefix=prefix,
                                                prefix_sep=prefix_sep,
                                                dummy_na=dummy_na,
