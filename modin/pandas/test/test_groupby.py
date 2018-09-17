@@ -25,7 +25,7 @@ def ray_df_almost_equals_pandas(ray_df, pandas_df):
     assert isinstance(ray_df, pd.DataFrame)
     difference = to_pandas(ray_df) - pandas_df
     diff_max = difference.max().max()
-    assert to_pandas(ray_df).equals(pandas_df) or diff_max < 0.0001
+    assert to_pandas(ray_df).equals(pandas_df) or diff_max < 0.0001 or (all(ray_df.isna().all()) and all(pandas_df.isna().all()))
 
 
 @pytest.fixture
@@ -366,7 +366,8 @@ def test_skew(ray_groupby, pandas_groupby):
 
 @pytest.fixture
 def test_ffill(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.ffill(), pandas_groupby.ffill())
+    with pytest.raises(NotImplementedError):
+        ray_groupby.ffill()
 
 
 @pytest.fixture
@@ -402,12 +403,9 @@ def test_ndim(ray_groupby, pandas_groupby):
 
 
 @pytest.fixture
-def test_cumsum(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.cumsum(), pandas_groupby.cumsum())
-    print(ray_groupby.cumsum(axis=1))
-    print(pandas_groupby.cumsum(axis=1))
+def test_cumsum(ray_groupby, pandas_groupby, axis=0):
     ray_df_equals_pandas(
-        ray_groupby.cumsum(axis=1), pandas_groupby.cumsum(axis=1))
+        ray_groupby.cumsum(axis=axis), pandas_groupby.cumsum(axis=axis))
 
 
 @pytest.fixture
@@ -417,10 +415,9 @@ def test_pct_change(ray_groupby, pandas_groupby):
 
 
 @pytest.fixture
-def test_cummax(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.cummax(), pandas_groupby.cummax())
+def test_cummax(ray_groupby, pandas_groupby, axis=0):
     ray_df_equals_pandas(
-        ray_groupby.cummax(axis=1), pandas_groupby.cummax(axis=1))
+        ray_groupby.cummax(axis=axis), pandas_groupby.cummax(axis=axis))
 
 
 @pytest.fixture
@@ -441,19 +438,20 @@ def test_first(ray_groupby, pandas_groupby):
 
 @pytest.fixture
 def test_backfill(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.backfill(), pandas_groupby.backfill())
+    with pytest.raises(NotImplementedError):
+        ray_groupby.backfill()
 
 
 @pytest.fixture
-def test_cummin(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.cummin(), pandas_groupby.cummin())
+def test_cummin(ray_groupby, pandas_groupby, axis=0):
     ray_df_equals_pandas(
-        ray_groupby.cummin(axis=1), pandas_groupby.cummin(axis=1))
+        ray_groupby.cummin(axis=axis), pandas_groupby.cummin(axis=axis))
 
 
 @pytest.fixture
 def test_bfill(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.bfill(), pandas_groupby.bfill())
+    with pytest.raises(NotImplementedError):
+        ray_groupby.bfill()
 
 
 @pytest.fixture
@@ -532,7 +530,7 @@ def test_nunique(ray_groupby, pandas_groupby):
 
 @pytest.fixture
 def test_median(ray_groupby, pandas_groupby):
-    ray_df_equals_pandas(ray_groupby.median(), pandas_groupby.median())
+    ray_df_almost_equals_pandas(ray_groupby.median(), pandas_groupby.median())
 
 
 @pytest.fixture
@@ -542,10 +540,10 @@ def test_head(ray_groupby, pandas_groupby, n):
 
 
 @pytest.fixture
-def test_cumprod(ray_groupby, pandas_groupby):
+def test_cumprod(ray_groupby, pandas_groupby, axis=0):
     ray_df_equals_pandas(ray_groupby.cumprod(), pandas_groupby.cumprod())
     ray_df_equals_pandas(
-        ray_groupby.cumprod(axis=1), pandas_groupby.cumprod(axis=1))
+        ray_groupby.cumprod(axis=axis), pandas_groupby.cumprod(axis=axis))
 
 
 @pytest.fixture

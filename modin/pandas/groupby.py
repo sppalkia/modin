@@ -89,8 +89,10 @@ class DataFrameGroupBy(object):
         return self._apply_agg_function(lambda df: df.skew(**kwargs))
 
     def ffill(self, limit=None):
-        return self._apply_agg_function(
-            lambda df: df.ffill(limit=limit))
+        raise NotImplementedError(
+            "To contribute to Pandas on Ray, please visit "
+            "github.com/modin-project/modin.")
+        return self._apply_agg_function(lambda df: df.ffill(limit=limit))
 
     def sem(self, ddof=1):
         raise NotImplementedError(
@@ -127,7 +129,7 @@ class DataFrameGroupBy(object):
 
     @property
     def groups(self):
-        return {k: pandas.Index(v) for k, v in self._keys_and_values}
+        return self._index_grouped
 
     def min(self, **kwargs):
         return self._apply_agg_function(lambda df: df.min(**kwargs))
@@ -152,8 +154,7 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def cumsum(self, axis=0, *args, **kwargs):
-        return self._apply_agg_function(
-            lambda df: df.cumsum(axis, *args, **kwargs))
+        return self._apply_agg_function(lambda df: df.cumsum(axis, *args, **kwargs))
 
     @property
     def indices(self):
@@ -200,8 +201,10 @@ class DataFrameGroupBy(object):
             lambda df: df.cummin(axis=axis, **kwargs))
 
     def bfill(self, limit=None):
-        return self._apply_agg_function(
-            lambda df: df.bfill(axis=self._axis, limit=limit))
+        raise NotImplementedError(
+            "To contribute to Pandas on Ray, please visit "
+            "github.com/modin-project/modin.")
+        return self._apply_agg_function(lambda df: df.bfill(limit))
 
     def idxmin(self):
         raise NotImplementedError(
@@ -238,7 +241,7 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def rank(self):
-        return self._apply_agg_function(lambda df: df.rank(axis=self._axis))
+        return self._apply_agg_function(lambda df: df.rank())
 
     @property
     def corrwith(self):
@@ -300,7 +303,8 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def ngroup(self, ascending=True):
-        return self._index_grouped.ngroup(ascending)
+        index = self._index if not self._axis else self._columns
+        return pandas.Series(index=index).groupby(by=self._by, **self._kwargs).ngroup(ascending)
 
     def nunique(self, dropna=True):
         return self._apply_agg_function(lambda df: df.nunique(dropna))
@@ -319,8 +323,7 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def cumprod(self, axis=0, *args, **kwargs):
-        return self._apply_agg_function(
-            lambda df: df.cumprod(axis, *args, **kwargs))
+        return self._apply_agg_function(lambda df: df.cumprod(axis, *args, **kwargs))
 
     def __iter__(self):
         return self._iter.__iter__()
@@ -343,8 +346,7 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def fillna(self, **kwargs):
-        return self._apply_agg_function(
-            lambda df: df.fillna(axis=self._axis, **kwargs))
+        return self._apply_agg_function(lambda df: df.fillna(**kwargs))
 
     def count(self, **kwargs):
         return self._apply_agg_function(lambda df: df.count(**kwargs))
@@ -394,7 +396,9 @@ class DataFrameGroupBy(object):
             "github.com/modin-project/modin.")
 
     def take(self, **kwargs):
-        return self._apply_agg_function(lambda df: df.take(**kwargs))
+        raise NotImplementedError(
+            "To contribute to Pandas on Ray, please visit "
+            "github.com/modin-project/modin.")
 
     def _apply_agg_function(self, f, **kwargs):
         """Perform aggregation and combine stages based on a given function.
@@ -407,4 +411,5 @@ class DataFrameGroupBy(object):
         """
         assert callable(f), "\'{0}\' object is not callable".format(type(f))
         from .dataframe import DataFrame
-        return DataFrame(data_manager=self._data_manager.groupby_agg(self._by, self._axis, f, self._kwargs, kwargs))
+        new_manager = self._data_manager.groupby_agg(self._by, self._axis, f, self._kwargs, kwargs)
+        return DataFrame(data_manager=new_manager)

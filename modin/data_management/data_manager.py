@@ -1384,17 +1384,24 @@ class PandasDataManager(object):
         else:
             pass
 
-    def _post_process_apply(self, result_data, axis):
+    def _post_process_apply(self, result_data, axis, try_scale=True):
         cls = type(self)
-        try:
-            index = self.compute_index(0, result_data, True)
-        except IndexError:
-            index = self.compute_index(0, result_data, False)
-        try:
-            columns = self.compute_index(1, result_data, True)
-        except IndexError:
-            columns = self.compute_index(1, result_data, False)
-
+        if try_scale:
+            try:
+                index = self.compute_index(0, result_data, True)
+            except IndexError:
+                index = self.compute_index(0, result_data, False)
+            try:
+                columns = self.compute_index(1, result_data, True)
+            except IndexError:
+                columns = self.compute_index(1, result_data, False)
+        else:
+            if not axis:
+                index = self.compute_index(0, result_data, False)
+                columns = self.columns
+            else:
+                index = self.index
+                columns = self.compute_index(1, result_data, False)
         # `apply` and `aggregate` can return a Series or a DataFrame object,
         # and since we need to handle each of those differently, we have to add
         # this logic here.
@@ -1482,7 +1489,15 @@ class PandasDataManager(object):
         return self.data.manual_shuffle(axis, func)
 
     def groupby_agg(self, by, axis, agg_func, groupby_args={}, agg_args={}):
-        func_prepared = self._prepare_method(lambda df: agg_func(df.groupby(by=by, axis=axis, **groupby_args), **agg_args))
+        remote_index = self.index if not axis else self.columns
+
+        def groupby_agg_builder(df):
+            if not axis:
+                df.index = remote_index
+            else:
+                df.columns = remote_index
+            return agg_func(df.groupby(by=by, axis=axis, **groupby_args), **agg_args)
+        func_prepared = self._prepare_method(lambda df: groupby_agg_builder(df))
         result_data = self.map_across_full_axis(axis, func_prepared)
-        return self._post_process_apply(result_data, axis)
+        return self._post_process_apply(result_data, axis, try_scale=False)
     # END Manual Partitioning methods
