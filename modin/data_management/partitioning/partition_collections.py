@@ -2,15 +2,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from typing import List, Tuple
+from typing import Tuple
 
 import numpy as np
 import ray
 import pandas
 
-from .remote_partition import RayRemotePartition, RemotePartition
+from .remote_partition import RayRemotePartition
 from .axis_partition import RayColumnPartition, RayRowPartition
-from .utils import compute_chunksize
+from .utils import compute_chunksize, _get_nan_block_id
 
 
 class BlockPartitions(object):
@@ -761,26 +761,22 @@ class BlockPartitions(object):
         return sum(self.block_lengths)
 
     def enlarge_partitions(self, n_rows=None, n_cols=None):
-        from ...pandas.utils import _get_nan_block_id
-        # import here to avoid circular import
-
         data = self.partitions
         block_partitions_cls = type(self)
 
         if n_rows:
             n_cols_lst = self.block_widths
-            nan_oids_lst = [self._partition_class(_get_nan_block_id(n_rows, n_cols_)) for n_cols_ in n_cols_lst]
+            nan_oids_lst = [self._partition_class(_get_nan_block_id(self._partition_class, n_rows, n_cols_)) for n_cols_ in n_cols_lst]
             new_chunk = block_partitions_cls(np.array([nan_oids_lst]))
             data = self.concat(axis=0, other_blocks=new_chunk)
 
         if n_cols:
             n_rows_lst = self.block_lengths
-            nan_oids_lst = [self._partition_class(_get_nan_block_id(n_rows_, n_cols)) for n_rows_ in n_rows_lst]
+            nan_oids_lst = [self._partition_class(_get_nan_block_id(self._partition_class, n_rows_, n_cols)) for n_rows_ in n_rows_lst]
             new_chunk = block_partitions_cls(np.array([nan_oids_lst]).T)
             data = self.concat(axis=1, other_blocks=new_chunk)
 
         return data
-
 
 
 class RayBlockPartitions(BlockPartitions):

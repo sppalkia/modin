@@ -4396,8 +4396,8 @@ class DataFrame(object):
         We currently support: single label, list array, slice object
         We do not support: boolean array, callable
         """
-        from .indexing import _Loc_Indexer
-        return _Loc_Indexer(self)
+        from .indexing import _LocIndexer
+        return _LocIndexer(self)
 
     @property
     def is_copy(self):
@@ -4422,8 +4422,8 @@ class DataFrame(object):
         We currently support: single label, list array, slice object
         We do not support: boolean array, callable
         """
-        from .indexing import _iLoc_Indexer
-        return _iLoc_Indexer(self)
+        from .indexing import _iLocIndexer
+        return _iLocIndexer(self)
 
     def _create_dataframe_from_manager(self, new_manager, inplace=False):
         """Returns or updates a DataFrame given new data_manager"""

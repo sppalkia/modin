@@ -10,12 +10,11 @@ from pandas.core.indexing import IndexingError
 from typing import Tuple
 from warnings import warn
 
-from ..data_management.data_manager import PandasDataManagerView, PandasDataManager
 from .dataframe import DataFrame
 
 """Indexing Helper Class works as follows:
 
-_Location_Indexer_Base provide methods framework for __getitem__
+_LocationIndexerBase provide methods framework for __getitem__
   and __setitem__ that work with Ray DataFrame's internal index. Base
   class's __{get,set}item__ takes in partitions & idx_in_partition data
   and perform lookup/item write.
@@ -135,13 +134,13 @@ def _compute_ndim(row_loc, col_loc):
     return ndim
 
 
-class _Location_Indexer_Base(object):
+class _LocationIndexerBase(object):
     """Base class for location indexer like loc and iloc
     """
 
     def __init__(self, ray_df: DataFrame):
-        self.dm: PandasDataManager = ray_df._data_manager
-        self.is_view = isinstance(self.dm, PandasDataManagerView)
+        self.dm = ray_df._data_manager
+        self.is_view = hasattr(self.dm, "is_view")
 
         self.row_scaler = False
         self.col_scaler = False
@@ -160,7 +159,6 @@ class _Location_Indexer_Base(object):
             single_axis = 1 if self.col_scaler else 0
             return dm_view.squeeze(ndim=1, axis=single_axis)
 
-
     def __setitem__(self, row_lookup: pandas.Index, col_lookup: pandas.Index, item):
         """
         Args:
@@ -172,7 +170,6 @@ class _Location_Indexer_Base(object):
         to_shape = (len(row_lookup), len(col_lookup))
         item = self._broadcast_item(item, to_shape)
         self._write_items(row_lookup, col_lookup, item)
-
 
     def _broadcast_item(self, item, to_shape):
         """Use numpy to broadcast or reshape item.
@@ -200,7 +197,7 @@ class _Location_Indexer_Base(object):
         self.dm.write_items(row_numeric_idx, col_numeric_idx, item)
 
 
-class _Loc_Indexer(_Location_Indexer_Base):
+class _LocIndexer(_LocationIndexerBase):
     """A indexer for ray_df.loc[] functionality"""
 
     def __getitem__(self, key):
@@ -208,14 +205,14 @@ class _Loc_Indexer(_Location_Indexer_Base):
         self._handle_enlargement(row_loc, col_loc)
         row_lookup, col_lookup = self._compute_lookup(row_loc, col_loc)
         ndim = self._expand_dim(row_lookup, col_lookup, ndim)
-        result = super(_Loc_Indexer, self).__getitem__(row_lookup, col_lookup,
-                                                       ndim)
+        result = super(_LocIndexer, self).__getitem__(row_lookup, col_lookup,
+                                                      ndim)
         return result
 
     def __setitem__(self, key, item):
         row_loc, col_loc, _, __, ___ = _parse_tuple(key)
         row_lookup, col_lookup = self._compute_lookup(row_loc, col_loc)
-        super(_Loc_Indexer, self).__setitem__(row_lookup, col_lookup, item)
+        super(_LocIndexer, self).__setitem__(row_lookup, col_lookup, item)
 
     def _handle_enlargement(self, row_loc, col_loc):
         """Handle Enlargement (if there is one).
@@ -272,7 +269,7 @@ class _Loc_Indexer(_Location_Indexer_Base):
         return row_lookup, col_lookup
 
 
-class _iLoc_Indexer(_Location_Indexer_Base):
+class _iLocIndexer(_LocationIndexerBase):
     """A indexer for ray_df.iloc[] functionality"""
 
     def __getitem__(self, key):
@@ -282,7 +279,7 @@ class _iLoc_Indexer(_Location_Indexer_Base):
         self._check_dtypes(col_loc)
 
         row_lookup, col_lookup = self._compute_lookup(row_loc, col_loc)
-        result = super(_iLoc_Indexer, self).__getitem__(
+        result = super(_iLocIndexer, self).__getitem__(
             row_lookup, col_lookup, ndim)
         return result
 
@@ -293,7 +290,7 @@ class _iLoc_Indexer(_Location_Indexer_Base):
         self._check_dtypes(col_loc)
 
         row_lookup, col_lookup = self._compute_lookup(row_loc, col_loc)
-        super(_iLoc_Indexer, self).__setitem__(row_lookup, col_lookup, item)
+        super(_iLocIndexer, self).__setitem__(row_lookup, col_lookup, item)
 
     def _compute_lookup(self, row_loc, col_loc) -> Tuple[pandas.Index, pandas.Index]:
         row_lookup = self.dm.index.to_series().iloc[row_loc].index

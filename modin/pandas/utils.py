@@ -2,32 +2,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
-import numpy as np
 import pandas
-import ray
 
 from ..data_management.factories import BaseFactory
-
-
-def _get_nan_block_id(n_row=1, n_col=1, transpose=False):
-    """A memory efficient way to get a block of NaNs.
-
-    Args:
-        n_rows(int): number of rows
-        n_col(int): number of columns
-        transpose(bool): if true, swap rows and columns
-    Returns:
-        ObjectID of the NaN block
-    """
-    global _NAN_BLOCKS
-    if transpose:
-        n_row, n_col = n_col, n_row
-    shape = (n_row, n_col)
-    if shape not in _NAN_BLOCKS:
-        arr = np.tile(np.array(np.NaN), shape)
-        _NAN_BLOCKS[shape] = ray.put(pandas.DataFrame(data=arr))
-    return _NAN_BLOCKS[shape]
 
 
 def from_pandas(df):

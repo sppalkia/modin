@@ -10,8 +10,7 @@ from pandas.core.dtypes.cast import find_common_type
 from pandas.core.dtypes.common import (_get_dtype_from_object, is_list_like, is_numeric_dtype)
 from pandas.core.index import _ensure_index
 
-from .partitioning.partition_collections import BlockPartitions, RayBlockPartitions
-from .partitioning.remote_partition import RayRemotePartition
+from .partitioning.partition_collections import BlockPartitions
 
 
 class PandasDataManager(object):
@@ -1641,6 +1640,7 @@ class PandasDataManagerView(PandasDataManager):
 
         self.index_map = index_map_series
         self.columns_map = columns_map_series
+        self.is_view = True
 
         PandasDataManager.__init__(self, block_partitions_object, index, columns, dtypes)
 
@@ -1664,7 +1664,6 @@ class PandasDataManagerView(PandasDataManager):
                                                                        col_indices=self.columns_map.values,
                                                                        lazy=True,
                                                                        keep_remaining=False)
-
         return masked_data
 
     def _set_data(self, new_data):
