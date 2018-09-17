@@ -222,22 +222,28 @@ class PandasDataManager(object):
         join = kwargs.get("join", "outer")
         ignore_index = kwargs.get("ignore_index", False)
 
+        # Concatenating two managers requires aligning their indices. After the
+        # indices are aligned, it should just be a simple concatenation of the
+        # `BlockPartitions` objects. This should not require remote compute.
         joined_axis = self._join_index_objects(axis, [other.columns if axis == 0
-            else other.index for other in others], join, sort=sort)
+                                                      else other.index for other in others], join, sort=sort)
 
+        # Since we are concatenating a list of managers, we will align all of
+        # the indices based on the `joined_axis` computed above.
         to_append = [other.reindex(axis ^ 1, joined_axis).data for other in others]
         new_self = self.reindex(axis ^ 1, joined_axis).data
         new_data = new_self.concat(axis, to_append)
 
         if axis == 0:
+            # The indices will be appended to form the final index.
+            # If `ignore_index` is true, we create a RangeIndex that is the
+            # length of all of the index objects combined. This is the same
+            # behavior as pandas.
             new_index = self.index.append([other.index for other in others]) if not ignore_index else pandas.RangeIndex(len(self.index) + sum([len(other.index) for other in others]))
-
             return cls(new_data, new_index, joined_axis)
         else:
-            self_proxy_columns = pandas.DataFrame(columns=self.columns).columns
-            others_proxy_columns = [pandas.DataFrame(columns=other.columns).columns for other in others]
-            new_columns = self_proxy_columns.append(others_proxy_columns)
-
+            # The columns will be appended to form the final columns.
+            new_columns = self.columns.append([other.columns for other in others])
             return cls(new_data, joined_axis, new_columns)
 
     def _join_data_manager(self, other, **kwargs):
@@ -258,8 +264,8 @@ class PandasDataManager(object):
 
         new_data = new_self.concat(1, to_join)
 
-        # This stage is to efficiently get the resulting columns, including the
-        # suffixes.
+        # We are using proxy DataFrame objects to build the columns based on
+        # the `lsuffix` and `rsuffix`.
         self_proxy = pandas.DataFrame(columns=self.columns)
         other_proxy = pandas.DataFrame(columns=other.columns)
         new_columns = self_proxy.join(other_proxy, lsuffix=lsuffix, rsuffix=rsuffix).columns
