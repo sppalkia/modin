@@ -2,19 +2,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import pandas
 from pandas.api.types import (is_scalar, is_list_like, is_bool)
 from pandas.core.dtypes.common import is_integer
 from pandas.core.indexing import IndexingError
-
-import numpy as np
-
-from warnings import warn
 from typing import Tuple
+from warnings import warn
 
 from ..data_management.data_manager import PandasDataManagerView, PandasDataManager
 from .dataframe import DataFrame
-
 
 """Indexing Helper Class works as follows:
 
@@ -151,7 +148,7 @@ class _Location_Indexer_Base(object):
 
     def __getitem__(self, row_lookup: pandas.Index, col_lookup: pandas.Index, ndim: int):
         if self.is_view:
-            dm_view = self.dm.clone(self.dm.data, row_lookup, col_lookup)
+            dm_view = self.dm.__constructor__(self.dm.data, row_lookup, col_lookup)
         else:
             dm_view = self.dm.view(row_lookup, col_lookup)
 
