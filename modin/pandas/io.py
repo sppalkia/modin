@@ -9,8 +9,6 @@ import inspect
 from io import BytesIO
 import os
 import py
-from pyarrow.parquet import ParquetFile
-import pyarrow.parquet as pq
 import re
 import warnings
 import numpy as np
@@ -45,6 +43,8 @@ def read_parquet(path, engine='auto', columns=None, **kwargs):
 
 
 def _read_parquet_pandas_on_ray(path, engine, columns, **kwargs):
+    from pyarrow.parquet import ParquetFile
+
     if not columns:
         pf = ParquetFile(path)
         columns = [
@@ -557,6 +557,7 @@ def _read_csv_with_offset_pandas_on_ray(fname, num_splits, start, end, kwargs, h
 
 @ray.remote
 def _read_parquet_column(path, column, num_splits, kwargs={}):
+    import pyarrow.parquet as pq
     df = pq.read_pandas(path, columns=[column], **kwargs).to_pandas()
     # Append the length of the index here to build it externally
     return split_result_of_axis_func_pandas(0, num_splits, df) + [len(df.index)]
