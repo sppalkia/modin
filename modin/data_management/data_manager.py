@@ -1478,89 +1478,65 @@ class PandasDataManager(object):
     def get_dummies(self, columns, **kwargs):
         cls = type(self)
 
+        # `columns` as None does not mean all columns, by default it means only
+        # non-numeric columns.
         if columns is None:
-            print("HERE")
-            func = self._prepare_method(lambda df: pandas.get_dummies(df, columns=columns, **kwargs))
-            new_data = self.map_across_full_axis(0, func)
-            new_columns = self.compute_index(1, new_data, False)
-            return cls(new_data, self.index, new_columns)
-        else:
-            if not is_list_like(columns):
+            columns = [c for c in self.columns if not is_numeric_dtype(self.dtypes[c])]
+
+            # If we aren't computing any dummies, there is no need for any
+            # remote compute.
+            if len(columns) == 0:
+                return self.copy()
+        elif not is_list_like(columns):
                 columns = [columns]
 
-            numeric_indices = self.columns.get_indexer_for(columns)
+        # We have to do one of two things in order to ensure the final columns
+        # are correct. Our first option is to map over the data and assign the
+        # columns in a separate pass. That is what we have chosen to do here.
+        # This is not as efficient, but it requires less information from the
+        # lower layers and does not break any of our internal requirements. The
+        # second option is that we assign the columns as a part of the
+        # `get_dummies` call. This requires knowledge of the length of each
+        # partition, and breaks some of our assumptions and separation of
+        # concerns.
+        def set_columns(df, columns):
+            df.columns = columns
+            return df
 
+        set_cols = self.columns
+        columns_applied = self.map_across_full_axis(1, lambda df: set_columns(df, set_cols))
+
+        # In some cases, we are mapping across all of the data. It is more
+        # efficient if we are mapping over all of the data to do it this way
+        # than it would be to reuse the code for specific columns.
+        if len(columns) == len(self.columns):
+            def get_dummies_builder(df):
+                return pandas.get_dummies(df, **kwargs)
+
+            func = self._prepare_method(lambda df: get_dummies_builder(df))
+            new_data = columns_applied.map_across_full_axis(0, func)
+            untouched_data = None
+        else:
             def get_dummies_builder(df, internal_indices=[]):
-                return pandas.get_dummies(df, columns=internal_indices, **kwargs)
+                return pandas.get_dummies(df.iloc[:, internal_indices], columns=None, **kwargs)
 
-            new_data = self.data.apply_func_to_select_indices_along_full_axis(0, get_dummies_builder, numeric_indices, keep_remaining=True)
-            new_columns = self.compute_index(1, new_data, False)
-            return cls(new_data, self.index, new_columns)
-        # original_col = columns
-        # prefix = kwargs.get("prefix", None)
-        # prefix_sep = kwargs.get("prefix_sep", "_")
-        # dummy_na = kwargs.get("dummy_na", False)
-        # drop_first = kwargs.get("drop_first", False)
-        # dtype = kwargs.get("dtype", np.uint8)
-        #
-        # def check_len(item, name):
-        #     len_msg = ("Length of '{name}' ({len_item}) did not match the "
-        #                "length of the columns being encoded ({len_enc}).")
-        #
-        #     if is_list_like(item):
-        #         if not len(item) == len(columns):
-        #             len_msg = len_msg.format(
-        #                 name=name,
-        #                 len_item=len(item),
-        #                 len_enc=len(columns))
-        #             raise ValueError(len_msg)
-        #
-        # check_len(prefix, 'prefix')
-        # check_len(prefix_sep, 'prefix_sep')
-        # if isinstance(prefix, string_types):
-        #     prefix = cycle([prefix])
-        #     prefix = [next(prefix) for i in range(len(columns))]
-        # if isinstance(prefix, dict):
-        #     prefix = [prefix[col] for col in columns]
-        #
-        # if prefix is None:
-        #     prefix = columns
-        #
-        # # validate separators
-        # if isinstance(prefix_sep, string_types):
-        #     prefix_sep = cycle([prefix_sep])
-        #     prefix_sep = [next(prefix_sep) for i in range(len(columns))]
-        # elif isinstance(prefix_sep, dict):
-        #     prefix_sep = [prefix_sep[col] for col in columns]
-        #
-        # numeric_indices = list(self.columns.get_indexer_for(columns))
-        #
-        # def dummies_builder(df, internal_indices):
-        #     # TODO: apply_func_to_select_indices function is not iterating thru
-        #     # prefix and prefix_sep like it is for internal_indices
-        #     df.columns = pandas.RangeIndex(len(df.columns))
-        #     new_df = pandas.get_dummies(df,
-        #                                 # prefix=prefix,
-        #                                 # prefix_sep=prefix_sep,
-        #                                 dummy_na=dummy_na,
-        #                                 columns=internal_indices,
-        #                                 drop_first=drop_first)
-        #     return new_df
-        #
-        # # func = self._prepare_method(lambda df : dummies_builder(df, prefix,
-        # #     prefix_sep, temp_cols))
-        # new_data = self.data.apply_func_to_select_indices_along_full_axis(axis=1,
-        #         func=dummies_builder, indices=numeric_indices,
-        #         keep_remaining=False)
-        # # new_data = self.map_across_full_axis(axis=1, func=func)
-        # # new_data = self.map_partitions(func)
-        #
-        # # new_colums = self.compute_index(1, new_data, True)
-        # # print(new_columns)
-        # # TODO: change to above compute_index call once stuff is working
-        # new_columns = pandas.Index(['0_a', '0_b', '0_c'], dtype='object')
-        #
-        # return cls(new_data, self.index, new_columns)
+            numeric_indices = list(self.columns.get_indexer_for(columns))
+            new_data = columns_applied.apply_func_to_select_indices_along_full_axis(0, get_dummies_builder, numeric_indices, keep_remaining=False)
+            untouched_data = self.drop(columns=columns)
+
+        # Since we set the columns in the beginning, we can just extract them
+        # here. There is fortunately no required extra steps for a correct
+        # column index.
+        final_columns = self.compute_index(1, new_data, False)
+
+        # If we mapped over all the data we are done. If not, we need to
+        # prepend the `new_data` with the raw data from the columns that were
+        # not selected.
+        if len(columns) != len(self.columns):
+            new_data = untouched_data.data.concat(1, new_data)
+            final_columns = untouched_data.columns.append(pandas.Index(final_columns))
+
+        return cls(new_data, self.index, final_columns)
 
     def groupby_agg(self, by, axis, agg_func, groupby_args={}, agg_args={}):
         remote_index = self.index if not axis else self.columns
