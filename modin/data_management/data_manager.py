@@ -559,14 +559,14 @@ class PandasDataManager(object):
     # Currently, this means a Pandas Series will be returned, but in the future
     # we will implement a Distributed Series, and this will be returned
     # instead.
-    def full_reduce(self, axis, map_func, reduce_func=None, numeric_only=False):
+    def _full_reduce(self, axis, map_func, reduce_func=None, numeric_only=False):
         if numeric_only:
             index = self.numeric_indices()
             if len(index) == 0:
                 return pandas.Series(dtype=np.float64)
             nonnumeric = [col for col, dtype in zip(self.columns, self.dtypes) if not is_numeric_dtype(dtype)]
             if axis:
-                return self.drop(columns=nonnumeric).full_reduce(axis, map_func)
+                return self.drop(columns=nonnumeric)._full_reduce(axis, map_func)
         else:
             if not axis:
                 index = self.columns
@@ -578,7 +578,8 @@ class PandasDataManager(object):
 
         # The XOR here will ensure that we reduce over the correct axis that
         # exists on the internal partitions. We flip the axis
-        result = self.data.full_reduce(map_func, reduce_func, axis ^ self._is_transposed)
+        result = self.data.map_across_blocks(lambda x: pandas.DataFrame(map_func(x)).T)
+        result = result.map_across_full_axis(axis ^ self._is_transposed, reduce_func).to_pandas(self._is_transposed)
         result.index = index
         return result
 
@@ -587,14 +588,14 @@ class PandasDataManager(object):
         numeric_only = kwargs.get("numeric_only", False)
         map_func = self._prepare_method(pandas.DataFrame.count, **kwargs)
         reduce_func = self._prepare_method(pandas.DataFrame.sum, **kwargs)
-        return self.full_reduce(axis, map_func, reduce_func, numeric_only)
+        return self._full_reduce(axis, map_func, reduce_func, numeric_only)
 
     def max(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
         axis = kwargs.get("axis", 0)
         numeric_only = True if axis else kwargs.get("numeric_only", False)
         func = self._prepare_method(pandas.DataFrame.max, **kwargs)
-        return self.full_reduce(axis, func, numeric_only=numeric_only)
+        return self._full_reduce(axis, func, numeric_only=numeric_only)
 
     def mean(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
@@ -607,28 +608,28 @@ class PandasDataManager(object):
             return pandas.DataFrame.mean(df, **kwargs)
 
         func = self._prepare_method(mean_builder, **kwargs)
-        return self.full_reduce(axis, func, numeric_only=True)
+        return self._full_reduce(axis, func, numeric_only=True)
 
     def min(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
         axis = kwargs.get("axis", 0)
         numeric_only = True if axis else kwargs.get("numeric_only", False)
         func = self._prepare_method(pandas.DataFrame.min, **kwargs)
-        return self.full_reduce(axis, func, numeric_only=numeric_only)
+        return self._full_reduce(axis, func, numeric_only=numeric_only)
 
     def prod(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
         axis = kwargs.get("axis", 0)
         index = self.index if axis else self.columns
         func = self._prepare_method(pandas.DataFrame.prod, **kwargs)
-        return self.full_reduce(axis, func, numeric_only=True)
+        return self._full_reduce(axis, func, numeric_only=True)
 
     def sum(self, **kwargs):
         # Pandas default is 0 (though not mentioned in docs)
         axis = kwargs.get("axis", 0)
         numeric_only = True if axis else kwargs.get("numeric_only", False)
         func = self._prepare_method(pandas.DataFrame.sum, **kwargs)
-        return self.full_reduce(axis, func, numeric_only=numeric_only)
+        return self._full_reduce(axis, func, numeric_only=numeric_only)
     # END Full Reduce operations
 
     # Map partitions operations
