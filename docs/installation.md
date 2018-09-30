@@ -1,0 +1,45 @@
+Installation
+============
+
+There are a couple of ways to start using Pandas on Ray. Most users will
+want to install with `pip`, but some users may want to build from the
+master branch on the [GitHub
+repo](https://github.com/modin-project/modin/tree/master).
+
+Installing with pip
+-------------------
+
+Modin can be installed with pip.
+
+``` {.sourceCode .bash}
+pip install modin
+```
+
+Dependencies
+------------
+
+Currently, Modin depends on pandas version 0.22. The API of pandas has a
+tendency to change some with each release, so we pin our current version
+to the most recent version to take advantage of the newest additions.
+This also typically means better performance and more correct code.
+
+Modin also depends on [Ray](http://ray.readthedocs.io). Ray is a
+task-parallel execution framework for parallelizing new and existing
+applications with minor code changes. Currently, we depend on the most
+recent Ray release: 0.5.0.
+
+Building Modin from Source
+--------------------------
+
+To build from source, you first must clone the repo:
+
+``` {.sourceCode .bash}
+git clone https://github.com/modin-project/modin.git
+```
+
+Once cloned, `cd` into the `modin` directory and use `pip` to install:
+
+``` {.sourceCode .bash}
+cd modin
+pip install -e .
+```
