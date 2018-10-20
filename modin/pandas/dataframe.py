@@ -40,7 +40,7 @@ class DataFrame(object):
         columns=None,
         dtype=None,
         copy=False,
-        data_manager=None,
+        query_compiler=None,
     ):
         """Distributed DataFrame object backed by Pandas dataframes.
 
@@ -56,22 +56,22 @@ class DataFrame(object):
                 If None, infer
             copy (boolean): Copy data from inputs.
                 Only affects DataFrame / 2d ndarray input.
-            data_manager: A manager object to manage distributed computation.
+            query_compiler: A manager object to manage distributed computation.
         """
         if isinstance(data, DataFrame):
-            self._data_manager = data._data_manager
+            self._query_compiler = data._query_compiler
             return
 
         # Check type of data and use appropriate constructor
-        if data is not None or data_manager is None:
+        if data is not None or query_compiler is None:
 
             pandas_df = pandas.DataFrame(
                 data=data, index=index, columns=columns, dtype=dtype, copy=copy
             )
 
-            self._data_manager = from_pandas(pandas_df)._data_manager
+            self._query_compiler = from_pandas(pandas_df)._query_compiler
         else:
-            self._data_manager = data_manager
+            self._query_compiler = query_compiler
 
     def __str__(self):
         return repr(self)
@@ -84,11 +84,11 @@ class DataFrame(object):
         num_cols_for_front = num_cols // 2 + 1
 
         if len(self.index) <= num_rows:
-            head = self._data_manager
+            head = self._query_compiler
             tail = None
         else:
-            head = self._data_manager.head(num_rows_for_head)
-            tail = self._data_manager.tail(num_rows_for_head)
+            head = self._query_compiler.head(num_rows_for_head)
+            tail = self._query_compiler.tail(num_rows_for_head)
 
         if len(self.columns) <= num_cols:
             head_front = head.to_pandas()
@@ -159,7 +159,7 @@ class DataFrame(object):
         Returns:
             The union of all indexes across the partitions.
         """
-        return self._data_manager.index
+        return self._query_compiler.index
 
     def _get_columns(self):
         """Get the columns for this DataFrame.
@@ -167,7 +167,7 @@ class DataFrame(object):
         Returns:
             The union of all indexes across the partitions.
         """
-        return self._data_manager.columns
+        return self._query_compiler.columns
 
     def _set_index(self, new_index):
         """Set the index for this DataFrame.
@@ -175,7 +175,7 @@ class DataFrame(object):
         Args:
             new_index: The new index to set this
         """
-        self._data_manager.index = new_index
+        self._query_compiler.index = new_index
 
     def _set_columns(self, new_columns):
         """Set the columns for this DataFrame.
@@ -183,7 +183,7 @@ class DataFrame(object):
         Args:
             new_index: The new index to set this
         """
-        self._data_manager.columns = new_columns
+        self._query_compiler.columns = new_columns
 
     index = property(_get_index, _set_index)
     columns = property(_get_columns, _set_columns)
@@ -245,7 +245,7 @@ class DataFrame(object):
         Returns:
             The dtypes for this DataFrame.
         """
-        return self._data_manager.dtypes
+        return self._query_compiler.dtypes
 
     @property
     def empty(self):
@@ -290,8 +290,8 @@ class DataFrame(object):
         Args:
             new_manager: The new DataManager to use to manage the data
         """
-        old_manager = self._data_manager
-        self._data_manager = new_manager
+        old_manager = self._query_compiler
+        self._query_compiler = new_manager
         old_manager.free()
 
     def add_prefix(self, prefix):
@@ -300,7 +300,7 @@ class DataFrame(object):
         Returns:
             A new DataFrame containing the new column names.
         """
-        return DataFrame(data_manager=self._data_manager.add_prefix(prefix))
+        return DataFrame(query_compiler=self._query_compiler.add_prefix(prefix))
 
     def add_suffix(self, suffix):
         """Add a suffix to each of the column names.
@@ -308,7 +308,7 @@ class DataFrame(object):
         Returns:
             A new DataFrame containing the new column names.
         """
-        return DataFrame(data_manager=self._data_manager.add_suffix(suffix))
+        return DataFrame(query_compiler=self._query_compiler.add_suffix(suffix))
 
     def applymap(self, func):
         """Apply a function to a DataFrame elementwise.
@@ -323,7 +323,7 @@ class DataFrame(object):
             UserWarning,
         )
 
-        return DataFrame(data_manager=self._data_manager.applymap(func))
+        return DataFrame(query_compiler=self._query_compiler.applymap(func))
 
     def copy(self, deep=True):
         """Creates a shallow copy of the DataFrame.
@@ -331,7 +331,7 @@ class DataFrame(object):
         Returns:
             A new DataFrame pointing to the same partitions as this one.
         """
-        return DataFrame(data_manager=self._data_manager.copy())
+        return DataFrame(query_compiler=self._query_compiler.copy())
 
     def groupby(
         self,
@@ -403,7 +403,7 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes_sum_prod_mean(axis, numeric_only, ignore_axis=False)
 
-        return self._data_manager.sum(
+        return self._query_compiler.sum(
             axis=axis,
             skipna=skipna,
             level=level,
@@ -423,7 +423,7 @@ class DataFrame(object):
                 # TODO Give a more accurate error to Pandas
                 raise TypeError("bad operand type for abs():", "str")
 
-        return DataFrame(data_manager=self._data_manager.abs())
+        return DataFrame(query_compiler=self._query_compiler.abs())
 
     def isin(self, values):
         """Fill a DataFrame with booleans for cells contained in values.
@@ -437,7 +437,7 @@ class DataFrame(object):
             True: cell is contained in values.
             False: otherwise
         """
-        return DataFrame(data_manager=self._data_manager.isin(values=values))
+        return DataFrame(query_compiler=self._query_compiler.isin(values=values))
 
     def isna(self):
         """Fill a DataFrame with booleans for cells containing NA.
@@ -448,7 +448,7 @@ class DataFrame(object):
             True: cell contains NA.
             False: otherwise.
         """
-        return DataFrame(data_manager=self._data_manager.isna())
+        return DataFrame(query_compiler=self._query_compiler.isna())
 
     def isnull(self):
         """Fill a DataFrame with booleans for cells containing a null value.
@@ -459,7 +459,7 @@ class DataFrame(object):
             True: cell contains null.
             False: otherwise.
         """
-        return DataFrame(data_manager=self._data_manager.isnull())
+        return DataFrame(query_compiler=self._query_compiler.isnull())
 
     def keys(self):
         """Get the info axis for the DataFrame.
@@ -475,7 +475,7 @@ class DataFrame(object):
         Returns:
             A new DataFrame transposed from this DataFrame.
         """
-        return DataFrame(data_manager=self._data_manager.transpose(*args, **kwargs))
+        return DataFrame(query_compiler=self._query_compiler.transpose(*args, **kwargs))
 
     T = property(transpose)
 
@@ -509,7 +509,7 @@ class DataFrame(object):
             if not inplace:
                 return result
 
-            self._update_inplace(new_manager=result._data_manager)
+            self._update_inplace(new_manager=result._query_compiler)
             return
 
         axis = pandas.DataFrame()._get_axis_number(axis)
@@ -531,12 +531,12 @@ class DataFrame(object):
                 if check.any():
                     raise KeyError(list(np.compress(check, subset)))
 
-        new_manager = self._data_manager.dropna(
+        new_manager = self._query_compiler.dropna(
             axis=axis, how=how, thresh=thresh, subset=subset
         )
 
         if not inplace:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
         else:
             self._update_inplace(new_manager=new_manager)
 
@@ -555,7 +555,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.add,
                 other,
@@ -565,7 +565,7 @@ class DataFrame(object):
             )
 
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.add(
+        new_manager = self._query_compiler.add(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -647,7 +647,7 @@ class DataFrame(object):
         broadcast_axis=None,
     ):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.align,
             other,
@@ -673,7 +673,7 @@ class DataFrame(object):
             axis = pandas.DataFrame()._get_axis_number(axis)
         else:
             axis = None
-        result = self._data_manager.all(
+        result = self._query_compiler.all(
             axis=axis, bool_only=bool_only, skipna=skipna, level=level, **kwargs
         )
         if axis is not None:
@@ -692,7 +692,7 @@ class DataFrame(object):
             axis = pandas.DataFrame()._get_axis_number(axis)
         else:
             axis = None
-        result = self._data_manager.any(
+        result = self._query_compiler.any(
             axis=axis, bool_only=bool_only, skipna=skipna, level=level, **kwargs
         )
         if axis is not None:
@@ -728,18 +728,18 @@ class DataFrame(object):
                 index = pandas.Index([other.name], name=self.index.name)
 
             # Create a Modin DataFrame from this Series for ease of development
-            other = DataFrame(pandas.DataFrame(other).T, index=index)._data_manager
+            other = DataFrame(pandas.DataFrame(other).T, index=index)._query_compiler
         elif isinstance(other, list):
             if not isinstance(other[0], DataFrame):
                 other = pandas.DataFrame(other)
                 if (self.columns.get_indexer(other.columns) >= 0).all():
-                    other = DataFrame(other.loc[:, self.columns])._data_manager
+                    other = DataFrame(other.loc[:, self.columns])._query_compiler
                 else:
-                    other = DataFrame(other)._data_manager
+                    other = DataFrame(other)._query_compiler
             else:
-                other = [obj._data_manager for obj in other]
+                other = [obj._query_compiler for obj in other]
         else:
-            other = other._data_manager
+            other = other._query_compiler
 
         # If ignore_index is False, by definition the Index will be correct.
         # We also do this first to ensure that we don't waste compute/memory.
@@ -753,10 +753,10 @@ class DataFrame(object):
                     )
                 )
 
-        data_manager = self._data_manager.concat(
+        query_compiler = self._query_compiler.concat(
             0, other, ignore_index=ignore_index, sort=sort
         )
-        return DataFrame(data_manager=data_manager)
+        return DataFrame(query_compiler=query_compiler)
 
     def apply(
         self, func, axis=0, broadcast=False, raw=False, reduce=None, args=(), **kwds
@@ -804,10 +804,10 @@ class DataFrame(object):
         elif not callable(func):
             return
 
-        data_manager = self._data_manager.apply(func, axis, *args, **kwds)
-        if isinstance(data_manager, pandas.Series):
-            return data_manager
-        return DataFrame(data_manager=data_manager)
+        query_compiler = self._query_compiler.apply(func, axis, *args, **kwds)
+        if isinstance(query_compiler, pandas.Series):
+            return query_compiler
+        return DataFrame(query_compiler=query_compiler)
 
     def as_blocks(self, copy=True):
         return self._default_to_pandas_func(pandas.DataFrame.as_blocks, copy=copy)
@@ -855,11 +855,11 @@ class DataFrame(object):
             for column in self.columns:
                 col_dtypes[column] = dtype
 
-        new_data_manager = self._data_manager.astype(col_dtypes, **kwargs)
+        new_query_compiler = self._query_compiler.astype(col_dtypes, **kwargs)
         if copy:
-            return DataFrame(data_manager=new_data_manager)
+            return DataFrame(query_compiler=new_query_compiler)
         else:
-            self._update_inplace(new_data_manager)
+            self._update_inplace(new_query_compiler)
 
     def at_time(self, time, asof=False):
         return self._default_to_pandas_func(pandas.DataFrame.at_time, time, asof=asof)
@@ -945,14 +945,14 @@ class DataFrame(object):
         if upper and np.any(np.isnan(upper)):
             upper = None
 
-        new_manager = self._data_manager.clip(
+        new_manager = self._query_compiler.clip(
             lower=lower, upper=upper, axis=axis, inplace=inplace, *args, **kwargs
         )
 
         if inplace:
             self._update_inplace(new_manager=new_manager)
         else:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
 
     def clip_lower(self, threshold, axis=None, inplace=False):
         return self.clip(lower=threshold, axis=axis, inplace=inplace)
@@ -962,7 +962,7 @@ class DataFrame(object):
 
     def combine(self, other, func, fill_value=None, overwrite=True):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.combine,
             other,
@@ -973,7 +973,7 @@ class DataFrame(object):
 
     def combine_first(self, other):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(pandas.DataFrame.combine_first, other=other)
 
     def compound(self, axis=None, skipna=None, level=None):
@@ -1008,7 +1008,7 @@ class DataFrame(object):
 
     def corrwith(self, other, axis=0, drop=False):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.corrwith, other, axis=axis, drop=drop
         )
@@ -1026,7 +1026,7 @@ class DataFrame(object):
             The count, in a Series (or DataFrame if level is specified).
         """
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
-        return self._data_manager.count(
+        return self._query_compiler.count(
             axis=axis, level=level, numeric_only=numeric_only
         )
 
@@ -1049,7 +1049,9 @@ class DataFrame(object):
         if axis:
             self._validate_dtypes()
         return DataFrame(
-            data_manager=self._data_manager.cummax(axis=axis, skipna=skipna, **kwargs)
+            query_compiler=self._query_compiler.cummax(
+                axis=axis, skipna=skipna, **kwargs
+            )
         )
 
     def cummin(self, axis=None, skipna=True, *args, **kwargs):
@@ -1066,7 +1068,9 @@ class DataFrame(object):
         if axis:
             self._validate_dtypes()
         return DataFrame(
-            data_manager=self._data_manager.cummin(axis=axis, skipna=skipna, **kwargs)
+            query_compiler=self._query_compiler.cummin(
+                axis=axis, skipna=skipna, **kwargs
+            )
         )
 
     def cumprod(self, axis=None, skipna=True, *args, **kwargs):
@@ -1082,7 +1086,9 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes(numeric_only=True)
         return DataFrame(
-            data_manager=self._data_manager.cumprod(axis=axis, skipna=skipna, **kwargs)
+            query_compiler=self._query_compiler.cumprod(
+                axis=axis, skipna=skipna, **kwargs
+            )
         )
 
     def cumsum(self, axis=None, skipna=True, *args, **kwargs):
@@ -1098,7 +1104,9 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes(numeric_only=True)
         return DataFrame(
-            data_manager=self._data_manager.cumsum(axis=axis, skipna=skipna, **kwargs)
+            query_compiler=self._query_compiler.cumsum(
+                axis=axis, skipna=skipna, **kwargs
+            )
         )
 
     def describe(self, percentiles=None, include=None, exclude=None):
@@ -1125,7 +1133,7 @@ class DataFrame(object):
         if percentiles is not None:
             pandas.DataFrame()._check_percentile(percentiles)
         return DataFrame(
-            data_manager=self._data_manager.describe(
+            query_compiler=self._query_compiler.describe(
                 percentiles=percentiles, include=include, exclude=exclude
             )
         )
@@ -1142,7 +1150,7 @@ class DataFrame(object):
         """
         axis = pandas.DataFrame()._get_axis_number(axis)
         return DataFrame(
-            data_manager=self._data_manager.diff(periods=periods, axis=axis)
+            query_compiler=self._query_compiler.diff(periods=periods, axis=axis)
         )
 
     def div(self, other, axis="columns", level=None, fill_value=None):
@@ -1159,7 +1167,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.div,
                 other,
@@ -1168,7 +1176,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.div(
+        new_manager = self._query_compiler.div(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -1189,7 +1197,7 @@ class DataFrame(object):
 
     def dot(self, other):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(pandas.DataFrame.dot, other)
 
     def drop(
@@ -1283,14 +1291,14 @@ class DataFrame(object):
                 if not len(axes["columns"]):
                     axes["columns"] = None
 
-        new_manager = self._data_manager.drop(
+        new_manager = self._query_compiler.drop(
             index=axes["index"], columns=axes["columns"]
         )
 
         if inplace:
             self._update_inplace(new_manager=new_manager)
 
-        return DataFrame(data_manager=new_manager)
+        return DataFrame(query_compiler=new_manager)
 
     def drop_duplicates(self, subset=None, keep="first", inplace=False):
         return self._default_to_pandas_func(
@@ -1315,12 +1323,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.eq, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.eq(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.eq(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def equals(self, other):
@@ -1385,7 +1393,7 @@ class DataFrame(object):
         """
         self._validate_eval_query(expr, **kwargs)
         inplace = validate_bool_kwarg(inplace, "inplace")
-        result = self._data_manager.eval(expr, **kwargs)
+        result = self._query_compiler.eval(expr, **kwargs)
 
         if isinstance(result, pandas.Series):
             return result
@@ -1393,7 +1401,7 @@ class DataFrame(object):
             if inplace:
                 self._update_inplace(new_manager=result)
             else:
-                return DataFrame(data_manager=result)
+                return DataFrame(query_compiler=result)
 
     def ewm(
         self,
@@ -1491,7 +1499,7 @@ class DataFrame(object):
                 **kwargs
             )
             if inplace:
-                self._update_inplace(result._data_manager)
+                self._update_inplace(result._query_compiler)
             else:
                 return result
         inplace = validate_bool_kwarg(inplace, "inplace")
@@ -1513,7 +1521,7 @@ class DataFrame(object):
             )
             raise ValueError(msg)
 
-        new_manager = self._data_manager.fillna(
+        new_manager = self._query_compiler.fillna(
             value=value,
             method=method,
             axis=axis,
@@ -1525,7 +1533,7 @@ class DataFrame(object):
         if inplace:
             self._update_inplace(new_manager=new_manager)
         else:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
 
     def filter(self, items=None, like=None, regex=None, axis=None):
         """Subset rows or columns based on their labels
@@ -1581,7 +1589,7 @@ class DataFrame(object):
         Returns:
             scalar: type of index
         """
-        return self._data_manager.first_valid_index()
+        return self._query_compiler.first_valid_index()
 
     def floordiv(self, other, axis="columns", level=None, fill_value=None):
         """Divides this DataFrame against another DataFrame/Series/scalar.
@@ -1597,7 +1605,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.floordiv,
                 other,
@@ -1606,7 +1614,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.floordiv(
+        new_manager = self._query_compiler.floordiv(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -1683,12 +1691,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.ge, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.ge(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.ge(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def get(self, key, default=None):
@@ -1749,12 +1757,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.gt, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.gt(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.gt(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def head(self, n=5):
@@ -1768,7 +1776,7 @@ class DataFrame(object):
         """
         if n >= len(self.index):
             return self.copy()
-        return DataFrame(data_manager=self._data_manager.head(n))
+        return DataFrame(query_compiler=self._query_compiler.head(n))
 
     def hist(
         self,
@@ -1820,7 +1828,7 @@ class DataFrame(object):
         """
         if not all(d != np.dtype("O") for d in self.dtypes):
             raise TypeError("reduction operation 'argmax' not allowed for this dtype")
-        return self._data_manager.idxmax(axis=axis, skipna=skipna)
+        return self._query_compiler.idxmax(axis=axis, skipna=skipna)
 
     def idxmin(self, axis=0, skipna=True):
         """Get the index of the first occurrence of the min value of the axis.
@@ -1835,7 +1843,7 @@ class DataFrame(object):
         """
         if not all(d != np.dtype("O") for d in self.dtypes):
             raise TypeError("reduction operation 'argmax' not allowed for this dtype")
-        return self._data_manager.idxmin(axis=axis, skipna=skipna)
+        return self._query_compiler.idxmin(axis=axis, skipna=skipna)
 
     def infer_objects(self):
         return self._default_to_pandas_func(pandas.DataFrame.infer_objects)
@@ -1925,9 +1933,9 @@ class DataFrame(object):
         index_string = index.summary() + "\n"
 
         if null_counts:
-            counts = self._data_manager.count()
+            counts = self._query_compiler.count()
         if memory_usage:
-            memory_usage_data = self._data_manager.memory_usage(
+            memory_usage_data = self._query_compiler.memory_usage(
                 deep=memory_usage_deep, index=True
             )
         if actually_verbose:
@@ -1986,7 +1994,7 @@ class DataFrame(object):
             )
         if loc < 0:
             raise ValueError("unbounded slice")
-        new_manager = self._data_manager.insert(loc, column, value)
+        new_manager = self._query_compiler.insert(loc, column, value)
         self._update_inplace(new_manager=new_manager)
 
     def interpolate(
@@ -2028,7 +2036,7 @@ class DataFrame(object):
             df.index = [next(index_iter)]
             return df.iterrows()
 
-        partition_iterator = PartitionIterator(self._data_manager, 0, iterrow_builder)
+        partition_iterator = PartitionIterator(self._query_compiler, 0, iterrow_builder)
         for v in partition_iterator:
             yield v
 
@@ -2050,7 +2058,7 @@ class DataFrame(object):
             df.index = self.index
             return df.items()
 
-        partition_iterator = PartitionIterator(self._data_manager, 1, items_builder)
+        partition_iterator = PartitionIterator(self._query_compiler, 1, items_builder)
         for v in partition_iterator:
             yield v
 
@@ -2089,7 +2097,7 @@ class DataFrame(object):
             return df.itertuples(index=index, name=name)
 
         partition_iterator = PartitionIterator(
-            self._data_manager, 0, itertuples_builder
+            self._query_compiler, 0, itertuples_builder
         )
         for v in partition_iterator:
             yield v
@@ -2111,7 +2119,7 @@ class DataFrame(object):
 
         if on is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.join,
                 other,
@@ -2136,8 +2144,8 @@ class DataFrame(object):
             ).columns
 
             return DataFrame(
-                data_manager=self._data_manager.join(
-                    other._data_manager,
+                query_compiler=self._query_compiler.join(
+                    other._query_compiler,
                     how=how,
                     lsuffix=lsuffix,
                     rsuffix=rsuffix,
@@ -2158,8 +2166,8 @@ class DataFrame(object):
             ).columns
 
             return DataFrame(
-                data_manager=self._data_manager.join(
-                    [obj._data_manager for obj in other],
+                query_compiler=self._query_compiler.join(
+                    [obj._query_compiler for obj in other],
                     how=how,
                     lsuffix=lsuffix,
                     rsuffix=rsuffix,
@@ -2196,7 +2204,7 @@ class DataFrame(object):
         Returns:
             scalar: type of index
         """
-        return self._data_manager.last_valid_index()
+        return self._query_compiler.last_valid_index()
 
     def le(self, other, axis="columns", level=None):
         """Checks element-wise that this is less than or equal to other.
@@ -2211,12 +2219,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.le, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.le(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.le(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def lookup(self, row_labels, col_labels):
@@ -2237,12 +2245,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.lt, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.lt(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.lt(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def mad(self, axis=None, skipna=None, level=None):
@@ -2262,7 +2270,7 @@ class DataFrame(object):
         raise_on_error=None,
     ):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.mask,
             cond,
@@ -2288,7 +2296,7 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes_min_max(axis, numeric_only)
 
-        return self._data_manager.max(
+        return self._query_compiler.max(
             axis=axis, skipna=skipna, level=level, numeric_only=numeric_only, **kwargs
         )
 
@@ -2305,7 +2313,7 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes_sum_prod_mean(axis, numeric_only, ignore_axis=False)
 
-        return self._data_manager.mean(
+        return self._query_compiler.mean(
             axis=axis, skipna=skipna, level=level, numeric_only=numeric_only, **kwargs
         )
 
@@ -2323,7 +2331,7 @@ class DataFrame(object):
         if numeric_only is not None and not numeric_only:
             self._validate_dtypes(numeric_only=True)
 
-        return self._data_manager.median(
+        return self._query_compiler.median(
             axis=axis, skipna=skipna, level=level, numeric_only=numeric_only, **kwargs
         )
 
@@ -2358,7 +2366,7 @@ class DataFrame(object):
             the memory usage of each of the columns in bytes. If `index=true`,
             then the first value of the Series will be 'Index' with its memory usage.
         """
-        result = self._data_manager.memory_usage(index=index, deep=deep)
+        result = self._query_compiler.memory_usage(index=index, deep=deep)
         result.index = self.columns
         if index:
             index_value = self.index.memory_usage(deep=deep)
@@ -2411,7 +2419,7 @@ class DataFrame(object):
             )
         if left_index is False or right_index is False:
             if isinstance(right, DataFrame):
-                right = right._data_manager.to_pandas()
+                right = right._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.merge,
                 right,
@@ -2445,7 +2453,7 @@ class DataFrame(object):
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes_min_max(axis, numeric_only)
 
-        return self._data_manager.min(
+        return self._query_compiler.min(
             axis=axis, skipna=skipna, level=level, numeric_only=numeric_only, **kwargs
         )
 
@@ -2463,7 +2471,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.mod,
                 other,
@@ -2472,7 +2480,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.mod(
+        new_manager = self._query_compiler.mod(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -2489,7 +2497,9 @@ class DataFrame(object):
         """
         axis = pandas.DataFrame()._get_axis_number(axis)
         return DataFrame(
-            data_manager=self._data_manager.mode(axis=axis, numeric_only=numeric_only)
+            query_compiler=self._query_compiler.mode(
+                axis=axis, numeric_only=numeric_only
+            )
         )
 
     def mul(self, other, axis="columns", level=None, fill_value=None):
@@ -2506,7 +2516,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.mul,
                 other,
@@ -2515,7 +2525,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.mul(
+        new_manager = self._query_compiler.mul(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -2547,12 +2557,12 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.ne, other, axis=axis, level=level
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.ne(other=other, axis=axis, level=level)
+        new_manager = self._query_compiler.ne(other=other, axis=axis, level=level)
         return self._create_dataframe_from_manager(new_manager)
 
     def nlargest(self, n, columns, keep="first"):
@@ -2567,7 +2577,7 @@ class DataFrame(object):
             Boolean DataFrame where value is False if corresponding
             value is NaN, True otherwise
         """
-        return DataFrame(data_manager=self._data_manager.notna())
+        return DataFrame(query_compiler=self._query_compiler.notna())
 
     def notnull(self):
         """Perform notnull across the DataFrame.
@@ -2576,7 +2586,7 @@ class DataFrame(object):
             Boolean DataFrame where value is False if corresponding
             value is NaN, True otherwise
         """
-        return DataFrame(data_manager=self._data_manager.notnull())
+        return DataFrame(query_compiler=self._query_compiler.notnull())
 
     def nsmallest(self, n, columns, keep="first"):
         return self._default_to_pandas_func(
@@ -2595,7 +2605,7 @@ class DataFrame(object):
             nunique : Series
         """
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
-        return self._data_manager.nunique(axis=axis, dropna=dropna)
+        return self._query_compiler.nunique(axis=axis, dropna=dropna)
 
     def pct_change(self, periods=1, fill_method="pad", limit=None, freq=None, **kwargs):
         return self._default_to_pandas_func(
@@ -2712,7 +2722,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.pow,
                 other,
@@ -2722,7 +2732,7 @@ class DataFrame(object):
             )
 
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.pow(
+        new_manager = self._query_compiler.pow(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -2750,7 +2760,7 @@ class DataFrame(object):
         """
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
         self._validate_dtypes_sum_prod_mean(axis, numeric_only, ignore_axis=True)
-        return self._data_manager.prod(
+        return self._query_compiler.prod(
             axis=axis,
             skipna=skipna,
             level=level,
@@ -2845,7 +2855,7 @@ class DataFrame(object):
 
         if isinstance(q, (pandas.Series, np.ndarray, pandas.Index, list)):
             return DataFrame(
-                data_manager=self._data_manager.quantile_for_list_of_values(
+                query_compiler=self._query_compiler.quantile_for_list_of_values(
                     q=q,
                     axis=axis,
                     numeric_only=numeric_only,
@@ -2853,7 +2863,7 @@ class DataFrame(object):
                 )
             )
         else:
-            return self._data_manager.quantile_for_single_value(
+            return self._query_compiler.quantile_for_single_value(
                 q=q, axis=axis, numeric_only=numeric_only, interpolation=interpolation
             )
 
@@ -2869,12 +2879,12 @@ class DataFrame(object):
         )
         self._validate_eval_query(expr, **kwargs)
         inplace = validate_bool_kwarg(inplace, "inplace")
-        new_manager = self._data_manager.query(expr, **kwargs)
+        new_manager = self._query_compiler.query(expr, **kwargs)
 
         if inplace:
             self._update_inplace(new_manager=new_manager)
         else:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
 
     def radd(self, other, axis="columns", level=None, fill_value=None):
         return self.add(other, axis, level, fill_value)
@@ -2911,7 +2921,7 @@ class DataFrame(object):
         """
         axis = pandas.DataFrame()._get_axis_number(axis)
         return DataFrame(
-            data_manager=self._data_manager.rank(
+            query_compiler=self._query_compiler.rank(
                 axis=axis,
                 method=method,
                 numeric_only=numeric_only,
@@ -2935,7 +2945,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.rdiv,
                 other,
@@ -2944,7 +2954,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.rdiv(
+        new_manager = self._query_compiler.rdiv(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -2982,7 +2992,7 @@ class DataFrame(object):
         elif labels is not None:
             columns = labels
         if index is not None:
-            new_manager = self._data_manager.reindex(
+            new_manager = self._query_compiler.reindex(
                 0,
                 index,
                 method=method,
@@ -2991,7 +3001,7 @@ class DataFrame(object):
                 tolerance=tolerance,
             )
         else:
-            new_manager = self._data_manager
+            new_manager = self._query_compiler
         if columns is not None:
             final_manager = new_manager.reindex(
                 1,
@@ -3004,7 +3014,7 @@ class DataFrame(object):
         else:
             final_manager = new_manager
         if copy:
-            return DataFrame(data_manager=final_manager)
+            return DataFrame(query_compiler=final_manager)
         else:
             self._update_inplace(new_manager=final_manager)
 
@@ -3031,7 +3041,7 @@ class DataFrame(object):
 
     def reindex_like(self, other, method=None, copy=True, limit=None, tolerance=None):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.reindex_like,
             other,
@@ -3208,7 +3218,7 @@ class DataFrame(object):
                 col_fill=col_fill,
             )
             if inplace:
-                self._update_inplace(result._data_manager)
+                self._update_inplace(result._query_compiler)
             else:
                 return result
         # Error checking for matching Pandas. Pandas does not allow you to
@@ -3216,11 +3226,11 @@ class DataFrame(object):
         # exist.
         if not drop and all(n in self.columns for n in ["level_0", "index"]):
             raise ValueError("cannot insert level_0, already exists")
-        new_manager = self._data_manager.reset_index(drop=drop, level=level)
+        new_manager = self._query_compiler.reset_index(drop=drop, level=level)
         if inplace:
             self._update_inplace(new_manager=new_manager)
         else:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
 
     def rfloordiv(self, other, axis="columns", level=None, fill_value=None):
         return self.floordiv(other, axis, level, fill_value)
@@ -3264,7 +3274,7 @@ class DataFrame(object):
              A new DataFrame.
         """
         return DataFrame(
-            data_manager=self._data_manager.round(decimals=decimals, **kwargs)
+            query_compiler=self._query_compiler.round(decimals=decimals, **kwargs)
         )
 
     def rpow(self, other, axis="columns", level=None, fill_value=None):
@@ -3281,7 +3291,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.rpow,
                 other,
@@ -3290,7 +3300,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.rpow(
+        new_manager = self._query_compiler.rpow(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
 
@@ -3310,7 +3320,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.rsub,
                 other,
@@ -3319,7 +3329,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.rsub(
+        new_manager = self._query_compiler.rsub(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -3462,11 +3472,11 @@ class DataFrame(object):
                 a=axis_labels, size=n, replace=replace, p=weights
             )
         if axis == 1:
-            data_manager = self._data_manager.getitem_col_array(samples)
-            return DataFrame(data_manager=data_manager)
+            query_compiler = self._query_compiler.getitem_col_array(samples)
+            return DataFrame(query_compiler=query_compiler)
         else:
-            data_manager = self._data_manager.getitem_row_array(samples)
-            return DataFrame(data_manager=data_manager)
+            query_compiler = self._query_compiler.getitem_row_array(samples)
+            return DataFrame(query_compiler=query_compiler)
 
     def select(self, crit, axis=0):
         return self._default_to_pandas_func(pandas.DataFrame.select, crit, axis=axis)
@@ -3658,7 +3668,7 @@ class DataFrame(object):
         if numeric_only is not None and not numeric_only:
             self._validate_dtypes(numeric_only=True)
 
-        return self._data_manager.skew(
+        return self._query_compiler.skew(
             axis=axis, skipna=skipna, level=level, numeric_only=numeric_only, **kwargs
         )
 
@@ -3705,7 +3715,7 @@ class DataFrame(object):
                 sort_remaining=sort_remaining,
             )
             if inplace:
-                self._update_inplace(result._data_manager)
+                self._update_inplace(result._query_compiler)
             else:
                 return result
         if by is not None:
@@ -3820,7 +3830,7 @@ class DataFrame(object):
         if numeric_only is not None and not numeric_only:
             self._validate_dtypes(numeric_only=True)
 
-        return self._data_manager.std(
+        return self._query_compiler.std(
             axis=axis,
             skipna=skipna,
             level=level,
@@ -3843,7 +3853,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.sub,
                 other,
@@ -3852,7 +3862,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.sub(
+        new_manager = self._query_compiler.sub(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -3892,7 +3902,7 @@ class DataFrame(object):
         """
         if n >= len(self.index):
             return self.copy()
-        return DataFrame(data_manager=self._data_manager.tail(n))
+        return DataFrame(query_compiler=self._query_compiler.tail(n))
 
     def take(self, indices, axis=0, convert=None, is_copy=True, **kwargs):
         return self._default_to_pandas_func(
@@ -4300,7 +4310,7 @@ class DataFrame(object):
         """
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             return self._default_to_pandas_func(
                 pandas.DataFrame.truediv,
                 other,
@@ -4309,7 +4319,7 @@ class DataFrame(object):
                 fill_value=fill_value,
             )
         other = self._validate_other(other, axis)
-        new_manager = self._data_manager.truediv(
+        new_manager = self._query_compiler.truediv(
             other=other, axis=axis, level=level, fill_value=fill_value
         )
         return self._create_dataframe_from_manager(new_manager)
@@ -4371,14 +4381,14 @@ class DataFrame(object):
             )
         if not isinstance(other, DataFrame):
             other = DataFrame(other)
-        data_manager = self._data_manager.update(
-            other._data_manager,
+        query_compiler = self._query_compiler.update(
+            other._query_compiler,
             join=join,
             overwrite=overwrite,
             filter_func=filter_func,
             raise_conflict=raise_conflict,
         )
-        self._update_inplace(new_manager=data_manager)
+        self._update_inplace(new_manager=query_compiler)
 
     def var(
         self, axis=None, skipna=None, level=None, ddof=1, numeric_only=None, **kwargs
@@ -4397,7 +4407,7 @@ class DataFrame(object):
         if numeric_only is not None and not numeric_only:
             self._validate_dtypes(numeric_only=True)
 
-        return self._data_manager.var(
+        return self._query_compiler.var(
             axis=axis,
             skipna=skipna,
             level=level,
@@ -4439,9 +4449,9 @@ class DataFrame(object):
             raise ValueError("Must specify axis=0 or 1")
         if level is not None:
             if isinstance(other, DataFrame):
-                other = other._data_manager.to_pandas()
+                other = other._query_compiler.to_pandas()
             if isinstance(cond, DataFrame):
-                cond = cond._data_manager.to_pandas()
+                cond = cond._query_compiler.to_pandas()
             result = self._default_to_pandas_func(
                 pandas.DataFrame.where,
                 cond,
@@ -4454,7 +4464,7 @@ class DataFrame(object):
                 raise_on_error=raise_on_error,
             )
             if inplace:
-                return self._update_inplace(result._data_manager)
+                return self._update_inplace(result._query_compiler)
             else:
                 return result
         axis = pandas.DataFrame()._get_axis_number(axis) if axis is not None else 0
@@ -4467,19 +4477,19 @@ class DataFrame(object):
                 raise ValueError("Array conditional must be same shape as self")
             cond = DataFrame(cond, index=self.index, columns=self.columns)
         if isinstance(other, DataFrame):
-            other = other._data_manager
+            other = other._query_compiler
         elif isinstance(other, pandas.Series):
             other = other.reindex(self.index if not axis else self.columns)
         else:
             index = self.index if not axis else self.columns
             other = pandas.Series(other, index=index)
-        data_manager = self._data_manager.where(
-            cond._data_manager, other, axis=axis, level=level
+        query_compiler = self._query_compiler.where(
+            cond._query_compiler, other, axis=axis, level=level
         )
         if inplace:
-            self._update_inplace(new_manager=data_manager)
+            self._update_inplace(new_manager=query_compiler)
         else:
-            return DataFrame(data_manager=data_manager)
+            return DataFrame(query_compiler=query_compiler)
 
     def xs(self, key, axis=0, level=None, drop_level=True):
         return self._default_to_pandas_func(
@@ -4519,7 +4529,7 @@ class DataFrame(object):
             return self._getitem_column(key)
 
     def _getitem_column(self, key):
-        return self._data_manager.getitem_single_key(key)
+        return self._query_compiler.getitem_single_key(key)
 
     def _getitem_array(self, key):
         if com.is_bool_indexer(key):
@@ -4536,18 +4546,20 @@ class DataFrame(object):
                     )
                 )
             key = check_bool_indexer(self.index, key)
-            # We convert here because the data_manager assumes it is a list of
+            # We convert here because the query_compiler assumes it is a list of
             # indices. This greatly decreases the complexity of the code.
             key = self.index[key]
-            return DataFrame(data_manager=self._data_manager.getitem_row_array(key))
+            return DataFrame(query_compiler=self._query_compiler.getitem_row_array(key))
         else:
-            return DataFrame(data_manager=self._data_manager.getitem_column_array(key))
+            return DataFrame(
+                query_compiler=self._query_compiler.getitem_column_array(key)
+            )
 
     def _getitem_slice(self, key):
-        # We convert here because the data_manager assumes it is a list of
+        # We convert here because the query_compiler assumes it is a list of
         # indices. This greatly decreases the complexity of the code.
         key = self.index[key]
-        return DataFrame(data_manager=self._data_manager.getitem_row_array(key))
+        return DataFrame(query_compiler=self._query_compiler.getitem_row_array(key))
 
     def __getattr__(self, key):
         """After regular attribute access, looks up the name in the columns
@@ -4661,11 +4673,11 @@ class DataFrame(object):
         """
         if key not in self:
             raise KeyError(key)
-        self._update_inplace(new_manager=self._data_manager.delitem(key))
+        self._update_inplace(new_manager=self._query_compiler.delitem(key))
 
     def __finalize__(self, other, method=None, **kwargs):
         if isinstance(other, DataFrame):
-            other = other._data_manager.to_pandas()
+            other = other._query_compiler.to_pandas()
         return self._default_to_pandas_func(
             pandas.DataFrame.__finalize__, other, method=method, **kwargs
         )
@@ -4806,22 +4818,22 @@ class DataFrame(object):
                     "Unary negative expects numeric dtype, not {}".format(t)
                 )
 
-        return DataFrame(data_manager=self._data_manager.negative())
+        return DataFrame(query_compiler=self._query_compiler.negative())
 
     def __sizeof__(self):
         return self._default_to_pandas_func(pandas.DataFrame.__sizeof__)
 
     @property
     def __doc__(self):
-        return self._data_manager.to_pandas().__doc__
+        return self._query_compiler.to_pandas().__doc__
 
     @property
     def blocks(self):
-        return self._data_manager.to_pandas().blocks
+        return self._query_compiler.to_pandas().blocks
 
     @property
     def style(self):
-        return self._data_manager.to_pandas().style
+        return self._query_compiler.to_pandas().style
 
     @property
     def iat(self, axis=None):
@@ -4842,7 +4854,7 @@ class DataFrame(object):
 
     @property
     def is_copy(self):
-        return self._data_manager.to_pandas().is_copy
+        return self._query_compiler.to_pandas().is_copy
 
     @property
     def at(self, axis=None):
@@ -4868,9 +4880,9 @@ class DataFrame(object):
         return _iLocIndexer(self)
 
     def _create_dataframe_from_manager(self, new_manager, inplace=False):
-        """Returns or updates a DataFrame given new data_manager"""
+        """Returns or updates a DataFrame given new query_compiler"""
         if not inplace:
-            return DataFrame(data_manager=new_manager)
+            return DataFrame(query_compiler=new_manager)
         else:
             self._update_inplace(new_manager=new_manager)
 
@@ -4878,7 +4890,7 @@ class DataFrame(object):
         """Helper method to check validity of other in inter-df operations"""
         axis = pandas.DataFrame()._get_axis_number(axis)
         if isinstance(other, DataFrame):
-            return other._data_manager
+            return other._query_compiler
         elif is_list_like(other):
             if axis == 0:
                 if len(other) != len(self.index):
@@ -4961,7 +4973,7 @@ class DataFrame(object):
     def _default_to_pandas_func(self, op, *args, **kwargs):
         """Helper method to use default pandas function"""
         warnings.warn("Defaulting to Pandas implementation", UserWarning)
-        result = op(self._data_manager.to_pandas(), *args, **kwargs)
+        result = op(self._query_compiler.to_pandas(), *args, **kwargs)
         if isinstance(result, pandas.DataFrame):
             return DataFrame(result)
         else:
