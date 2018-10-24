@@ -6,9 +6,10 @@ import sys
 
 from .. import __execution_engine__ as execution_engine
 from .. import __partition_format__ as partition_format
-from modin.data_management.query_compiler import PandasQueryCompiler
+from .query_compiler import (PandasQueryCompiler, ArrowQueryCompiler)
 from .partitioning.partition_collections import PandasOnRayBlockPartitions
 from .partitioning.partition_collections import PandasOnPythonBlockPartitions
+from .partitioning.partition_collections import ArrowOnRayBlockPartitions
 
 
 class BaseFactory(object):
@@ -40,3 +41,9 @@ class PandasOnPythonFactory(BaseFactory):
 
     data_mgr_cls = PandasQueryCompiler
     block_partitions_cls = PandasOnPythonBlockPartitions
+
+
+class ArrowOnRayFactory(BaseFactory):
+
+    data_mgr_cls = ArrowQueryCompiler
+    block_partitions_cls = ArrowOnRayBlockPartitions

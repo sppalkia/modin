@@ -10,6 +10,12 @@ from .pandas_on_python import (
 )
 from .utils import split_result_of_axis_func_pandas
 
+from .arrowtable_on_ray import (
+    ArrowOnRayAxisPartition,
+    ArrowOnRayColumnPartition,
+    ArrowOnRayRowPartition,
+)
+
 __all__ = [
     "PandasOnRayAxisPartition",
     "PandasOnRayColumnPartition",
@@ -18,4 +24,7 @@ __all__ = [
     "PandasOnPythonColumnPartition",
     "PandasOnPythonRowPartition",
     "split_result_of_axis_func_pandas",
+    "ArrowOnRayAxisPartition",
+    "ArrowOnRayColumnPartition",
+    "ArrowOnRayRowPartition",
 ]
