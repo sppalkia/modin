@@ -14,10 +14,11 @@ from pandas.core.dtypes.common import (
 )
 from pandas.core.index import _ensure_index
 
-from modin.data_management.partitioning.partition_collections import BaseBlockPartitions
+from .base_query_compiler import BaseQueryCompiler
+from ..partitioning.partition_collections import BaseBlockPartitions
 
 
-class PandasQueryCompiler(object):
+class PandasQueryCompiler(BaseQueryCompiler):
     """This class implements the logic necessary for operating on partitions
         with a Pandas backend. This logic is specific to Pandas."""
 
@@ -34,10 +35,6 @@ class PandasQueryCompiler(object):
         self.columns = columns
         if dtypes is not None:
             self._dtype_cache = dtypes
-
-    def __constructor__(self, block_paritions_object, index, columns, dtypes=None):
-        """By default, constructor method will invoke an init"""
-        return type(self)(block_paritions_object, index, columns, dtypes)
 
     # Index, columns and dtypes objects
     _dtype_cache = None
@@ -100,7 +97,7 @@ class PandasQueryCompiler(object):
 
     # END Index, columns, and dtypes objects
 
-    def compute_index(self, axis, data_object, compute_diff=True):
+    def _compute_index(self, axis, data_object, compute_diff=True):
         """Computes the index after a number of rows have been removed.
 
         Note: In order for this to be used properly, the indexes must not be
@@ -1539,7 +1536,7 @@ class PandasQueryCompiler(object):
         new_data = self.full_axis_reduce_along_select_indices(
             func, 0, new_columns, False
         )
-        new_index = self.compute_index(0, new_data, False)
+        new_index = self._compute_index(0, new_data, False)
         if numeric:
             new_dtypes = pandas.Series(
                 [np.float64 for _ in new_columns], index=new_columns
@@ -1789,7 +1786,7 @@ class PandasQueryCompiler(object):
         func = self._prepare_method(query_builder, **kwargs)
         new_data = self.map_across_full_axis(1, func)
         # Query removes rows, so we need to update the index
-        new_index = self.compute_index(0, new_data, True)
+        new_index = self._compute_index(0, new_data, True)
 
         return self.__constructor__(new_data, new_index, self.columns, self.dtypes)
 
@@ -1806,7 +1803,7 @@ class PandasQueryCompiler(object):
         # Since we assume no knowledge of internal state, we get the columns
         # from the internal partitions.
         if numeric_only:
-            new_columns = self.compute_index(1, new_data, True)
+            new_columns = self._compute_index(1, new_data, True)
         else:
             new_columns = self.columns
         new_dtypes = pandas.Series([np.float64 for _ in new_columns], index=new_columns)
@@ -2248,20 +2245,20 @@ class PandasQueryCompiler(object):
         """
         if try_scale:
             try:
-                index = self.compute_index(0, result_data, True)
+                index = self._compute_index(0, result_data, True)
             except IndexError:
-                index = self.compute_index(0, result_data, False)
+                index = self._compute_index(0, result_data, False)
             try:
-                columns = self.compute_index(1, result_data, True)
+                columns = self._compute_index(1, result_data, True)
             except IndexError:
-                columns = self.compute_index(1, result_data, False)
+                columns = self._compute_index(1, result_data, False)
         else:
             if not axis:
-                index = self.compute_index(0, result_data, False)
+                index = self._compute_index(0, result_data, False)
                 columns = self.columns
             else:
                 index = self.index
-                columns = self.compute_index(1, result_data, False)
+                columns = self._compute_index(1, result_data, False)
         # `apply` and `aggregate` can return a Series or a DataFrame object,
         # and since we need to handle each of those differently, we have to add
         # this logic here.
@@ -2466,7 +2463,7 @@ class PandasQueryCompiler(object):
         # Since we set the columns in the beginning, we can just extract them
         # here. There is fortunately no required extra steps for a correct
         # column index.
-        final_columns = self.compute_index(1, new_data, False)
+        final_columns = self._compute_index(1, new_data, False)
         # If we mapped over all the data we are done. If not, we need to
         # prepend the `new_data` with the raw data from the columns that were
         # not selected.
