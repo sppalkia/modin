@@ -52,7 +52,7 @@ def get_execution_engine():
 
 def get_partition_format():
     # See note above about engine + backing.
-    return "Pandas"
+    return "Pandas" if "MODIN_FORMAT" not in os.environ else os.environ["MODIN_FORMAT"]
 
 
 __git_revision__ = _git_version()

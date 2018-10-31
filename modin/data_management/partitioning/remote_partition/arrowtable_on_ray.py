@@ -91,6 +91,8 @@ class ArrowOnRayRemotePartition(BaseRemotePartition):
         Returns:
             A `RayRemotePartition` object.
         """
+        if isinstance(obj, pandas.DataFrame):
+            obj = pyarrow.Table.from_pandas(obj)
         return ArrowOnRayRemotePartition(ray.put(obj))
 
     @classmethod
@@ -136,5 +138,8 @@ def deploy_ray_func(func, partition, kwargs):
     # on it. We don't want the error to propagate to the user, and we want to
     # avoid copying unless we absolutely have to.
     except:
-        return pyarrow.Table.from_pandas(func(partition.to_pandas(), **kwargs))
+        result = func(partition.to_pandas(), **kwargs)
+        if isinstance(result, pandas.Series):
+            result = pandas.DataFrame(result).T
+        return pyarrow.Table.from_pandas(result)
         # return func(partition.copy(), **kwargs)
