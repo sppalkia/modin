@@ -77,7 +77,6 @@ try:
             redirect_output=True,
             include_webui=False,
             redirect_worker_output=True,
-            use_raylet=True,
         )
 except AssertionError:
     pass
