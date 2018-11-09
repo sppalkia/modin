@@ -2879,7 +2879,7 @@ class DataFrame(object):
         )
         self._validate_eval_query(expr, **kwargs)
         inplace = validate_bool_kwarg(inplace, "inplace")
-        new_manager = self._query_compiler.query(expr, **kwargs)
+        new_manager = self._query_compiler.query()
 
         if inplace:
             self._update_inplace(new_manager=new_manager)

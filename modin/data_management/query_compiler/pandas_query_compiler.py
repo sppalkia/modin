@@ -1779,7 +1779,7 @@ class PandasQueryCompiler(BaseQueryCompiler):
             df = df.copy()
             df.index = pandas.RangeIndex(len(df))
             df.columns = columns
-            df.query(expr, inplace=True, **kwargs)
+            df.query()
             df.columns = pandas.RangeIndex(len(df.columns))
             return df
 

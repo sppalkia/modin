@@ -2544,7 +2544,7 @@ def test_quantile(ray_df, pandas_df, q):
 @pytest.fixture
 def test_query(ray_df, pandas_df, funcs):
     for f in funcs:
-        pandas_df_new, ray_df_new = pandas_df.query(f), ray_df.query(f)
+        pandas_df_new, ray_df_new = pandas_df.query(), ray_df.query()
         assert pandas_df_new.equals(to_pandas(ray_df_new))
 
 
