@@ -32,8 +32,8 @@ class DaskAxisPartition(BaseAxisPartition):
 
         if other_axis_partition is not None:
             return [
-                DaskRemotePartition(dask.delayed(obj))
-                for obj in deploy_func_between_two_axis_partitions(
+                DaskRemotePartition(obj)
+                for obj in dask.delayed(deploy_func_between_two_axis_partitions, nout=num_splits)(
                     self.axis,
                     func,
                     num_splits,
@@ -45,12 +45,10 @@ class DaskAxisPartition(BaseAxisPartition):
                 )
             ]
 
-        args = [self.axis, func, num_splits, kwargs]
-
-        args.extend(dask.compute(*self.list_of_blocks))
-        return [
-            DaskRemotePartition(dask.delayed(obj)) for obj in deploy_axis_func(*args)
-        ]
+        args = [self.axis, func, num_splits, kwargs] + self.list_of_blocks
+        # args.extend(*self.list_of_blocks)
+        delayed_call = dask.delayed(deploy_axis_func, nout=num_splits)(*args)
+        return [DaskRemotePartition(delayed_call[i]) for i in range(num_splits)]
 
 
 class DaskColumnPartition(DaskAxisPartition):
@@ -81,16 +79,11 @@ def deploy_axis_func(axis, func, num_splits, kwargs, *partitions):
     """
     dataframe = pandas.concat(partitions, axis=axis, copy=False)
     result = func(dataframe, **kwargs)
-    # XXX pandas_on_python.py is slightly different here but that implementation seems wrong as
-    # uncovered by test_var
+
     if isinstance(result, pandas.Series):
         return [result] + [pandas.Series([]) for _ in range(num_splits - 1)]
     if num_splits != len(partitions):
         lengths = None
-
-    #    if num_splits != len(partitions) or isinstance(result, pandas.Series):
-    #        import pdb; pdb.set_trace()
-    #        lengths = None
     else:
         if axis == 0:
             lengths = [len(part) for part in partitions]
