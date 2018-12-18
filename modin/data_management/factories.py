@@ -187,3 +187,13 @@ class PandasOnDaskFactory(BaseFactory):
     query_compiler_cls = PandasQueryCompiler
     block_partitions_cls = DaskBlockPartitions
     io_cls = PandasOnDaskIO
+
+
+class WeldOnRayFactory(BaseFactory):
+
+    from modin.engines.ray.weld_on_ray.io import WeldOnRayIO
+    from modin.engines.ray.weld_on_ray.block_partitions import RayBlockPartitions
+
+    query_compiler_cls = PandasQueryCompiler
+    block_partitions_cls = RayBlockPartitions
+    io_cls = WeldOnRayIO
